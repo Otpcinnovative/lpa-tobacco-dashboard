@@ -1,0 +1,954 @@
+const fallbackRecords = (window.LPA_2568_DATA && window.LPA_2568_DATA.records) || [];
+let records = fallbackRecords;
+let dataSourceLabel = "เชื่อมข้อมูลสดจาก Google Sheets";
+let dataSourceMode = "loading";
+let availableYears = [Number((window.LPA_CONFIG || {}).defaultYear || 2568)];
+let countrySummaries = [];
+let generatedAt = "";
+const recordsByYear = new Map();
+const liveCachedYears = new Set();
+
+const els = {
+  year: document.getElementById("yearFilter"),
+  region: document.getElementById("regionFilter"),
+  province: document.getElementById("provinceFilter"),
+  district: document.getElementById("districtFilter"),
+  type: document.getElementById("typeFilter"),
+  search: document.getElementById("searchInput"),
+  reset: document.getElementById("resetFilters"),
+  pageSize: document.getElementById("pageSize"),
+  prevPage: document.getElementById("prevPage"),
+  nextPage: document.getElementById("nextPage"),
+  pageInfo: document.getElementById("pageInfo"),
+  caption: document.getElementById("filterCaption"),
+  rankMetric: document.getElementById("rankMetric"),
+  rankPrev: document.getElementById("rankPrev"),
+  rankNext: document.getElementById("rankNext"),
+  rankPageInfo: document.getElementById("rankPageInfo"),
+  kpiTotal: document.getElementById("kpiTotal"),
+  kpiScope: document.getElementById("kpiScope"),
+  kpi44Rate: document.getElementById("kpi44Rate"),
+  kpi44Detail: document.getElementById("kpi44Detail"),
+  kpi45Rate: document.getElementById("kpi45Rate"),
+  kpi45Detail: document.getElementById("kpi45Detail"),
+  kpiFollow: document.getElementById("kpiFollow"),
+  kpiFollowDetail: document.getElementById("kpiFollowDetail"),
+  yearContextNote: document.getElementById("yearContextNote"),
+  mapPill: document.getElementById("mapPill"),
+  regionChart: document.getElementById("regionChart"),
+  trendChart: document.getElementById("trendChart"),
+  provinceRanking: document.getElementById("provinceRanking"),
+  statusChart: document.getElementById("statusChart"),
+  districtPanel: document.getElementById("districtPanel"),
+  districtCount: document.getElementById("districtCount"),
+  districtSummary: document.getElementById("districtSummary"),
+  table: document.getElementById("lpaTable"),
+  tableCount: document.getElementById("tableCount"),
+  updatedAt: document.getElementById("updatedAtText"),
+  footerDataStatus: document.getElementById("footerDataStatus"),
+  loadingOverlay: document.getElementById("loadingOverlay"),
+  loadingTitle: document.getElementById("loadingTitle"),
+  loadingText: document.getElementById("loadingText"),
+};
+
+const quickButtons = [...document.querySelectorAll(".quick-filter")];
+
+const statusOrder = [
+  "ผ่านตามฐานประเมิน",
+  "ต้องติดตามด้านสถานศึกษา",
+  "ต้องติดตามด้าน อปท.",
+  "ต้องติดตามทั้งสองด้าน",
+];
+
+const statusColors = {
+  "ผ่านตามฐานประเมิน": "var(--green)",
+  "ต้องติดตามด้านสถานศึกษา": "var(--amber)",
+  "ต้องติดตามด้าน อปท.": "var(--teal)",
+  "ต้องติดตามทั้งสองด้าน": "var(--red)",
+};
+
+const state = {
+  region: "",
+  province: "",
+  district: "",
+  type: "",
+  search: "",
+  rankMetric: "follow",
+  rankPage: 1,
+  rankPageSize: 5,
+  quick: "all",
+  page: 1,
+  pageSize: 10,
+  year: Number((window.LPA_CONFIG || {}).defaultYear || 2568),
+};
+
+if (fallbackRecords.length) {
+  recordsByYear.set(state.year, fallbackRecords);
+}
+
+function setLoading(active, text = "กำลังเชื่อมข้อมูลจาก Google Sheets") {
+  document.body.classList.toggle("is-loading", active);
+  if (!els.loadingOverlay) return;
+  els.loadingOverlay.classList.toggle("is-visible", active);
+  els.loadingOverlay.setAttribute("aria-hidden", active ? "false" : "true");
+  if (els.loadingText) els.loadingText.textContent = text;
+}
+
+function liveEndpoint(year = state.year) {
+  const config = window.LPA_CONFIG || {};
+  const baseUrl = (config.appsScriptUrl || "").trim();
+  if (!baseUrl) return "";
+  const url = new URL(baseUrl);
+  url.searchParams.set("year", year || config.defaultYear || 2568);
+  return url.toString();
+}
+
+function loadJsonp(url) {
+  return new Promise((resolve, reject) => {
+    const callbackName = `lpaJsonp_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    const script = document.createElement("script");
+    const cleanup = () => {
+      delete window[callbackName];
+      script.remove();
+    };
+    window[callbackName] = (payload) => {
+      cleanup();
+      resolve(payload);
+    };
+    const jsonpUrl = new URL(url);
+    jsonpUrl.searchParams.set("callback", callbackName);
+    script.src = jsonpUrl.toString();
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("JSONP load failed"));
+    };
+    document.head.appendChild(script);
+  });
+}
+
+async function loadLiveRecords(year = state.year) {
+  const numericYear = Number(year);
+  if (recordsByYear.has(numericYear) && liveCachedYears.has(numericYear)) {
+    records = recordsByYear.get(numericYear);
+    state.year = numericYear;
+    dataSourceMode = "live";
+    dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`;
+    return true;
+  }
+  const url = liveEndpoint(year);
+  if (!url) return false;
+  try {
+    let payload;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      payload = await response.json();
+    } catch (fetchError) {
+      payload = await loadJsonp(url);
+    }
+    if (!payload || !Array.isArray(payload.records)) {
+      throw new Error("Live payload has no records array");
+    }
+    records = payload.records;
+    recordsByYear.set(Number(payload.year || year), payload.records);
+    liveCachedYears.add(Number(payload.year || year));
+    if (Array.isArray(payload.availableYears) && payload.availableYears.length) {
+      availableYears = payload.availableYears.map(Number).filter((item) => Number.isFinite(item));
+    }
+    if (Array.isArray(payload.countrySummaries)) {
+      countrySummaries = payload.countrySummaries;
+    }
+    generatedAt = payload.generatedAt || generatedAt;
+    state.year = Number(payload.year || year || (window.LPA_CONFIG || {}).defaultYear || 2568);
+    dataSourceMode = "live";
+    dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`;
+    return true;
+  } catch (error) {
+    console.warn("Cannot load live LPA data. Using fallback data.", error);
+    records = fallbackRecords;
+    dataSourceMode = "fallback";
+    dataSourceLabel = "ข้อมูลสำรองจากไฟล์ cleaned · ปี 2568";
+    state.year = Number((window.LPA_CONFIG || {}).defaultYear || 2568);
+    return false;
+  }
+}
+
+async function loadYearForTrend(year) {
+  const numericYear = Number(year);
+  if (recordsByYear.has(numericYear)) return true;
+  const url = liveEndpoint(numericYear);
+  if (!url) return false;
+  try {
+    let payload;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      payload = await response.json();
+    } catch (fetchError) {
+      payload = await loadJsonp(url);
+    }
+    if (!payload || !Array.isArray(payload.records)) return false;
+    recordsByYear.set(numericYear, payload.records);
+    liveCachedYears.add(numericYear);
+    if (Array.isArray(payload.countrySummaries)) countrySummaries = payload.countrySummaries;
+    if (payload.generatedAt) generatedAt = payload.generatedAt;
+    return true;
+  } catch (error) {
+    console.warn(`Cannot preload LPA data for ${numericYear}.`, error);
+    return false;
+  }
+}
+
+async function preloadTrendYears() {
+  if (!availableYears.length) return;
+  await Promise.all(availableYears.map((year) => loadYearForTrend(year)));
+  render();
+}
+
+function fmtInt(value) {
+  return new Intl.NumberFormat("th-TH").format(value || 0);
+}
+
+function fmtPct(value) {
+  if (!Number.isFinite(value)) return "-";
+  return new Intl.NumberFormat("th-TH", { style: "percent", maximumFractionDigits: 1 }).format(value);
+}
+
+function fmtPctPlain(value) {
+  if (!Number.isFinite(value)) return "-";
+  return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 1 }).format(value * 100) + "%";
+}
+
+function fmtRateNumber(value) {
+  if (!Number.isFinite(value)) return "-";
+  return new Intl.NumberFormat("th-TH", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value * 100);
+}
+
+function uniq(items) {
+  return [...new Set(items.filter((item) => item !== "" && item !== null && item !== undefined))];
+}
+
+function regionSort(a, b) {
+  return Number(a) - Number(b);
+}
+
+function setOptions(select, values, placeholder, currentValue, sortFn) {
+  const sorted = [...values].sort(sortFn || ((a, b) => String(a).localeCompare(String(b), "th")));
+  select.innerHTML = "";
+  const first = document.createElement("option");
+  first.value = "";
+  first.textContent = placeholder;
+  select.appendChild(first);
+  sorted.forEach((value) => {
+    const option = document.createElement("option");
+    option.value = String(value);
+    option.textContent = select === els.region ? `เขตสุขภาพที่ ${value}` : value;
+    select.appendChild(option);
+  });
+  select.value = sorted.map(String).includes(String(currentValue)) ? String(currentValue) : "";
+}
+
+function isSchoolComparable(record) {
+  return record.schoolComparable === "ใช่";
+}
+
+function isPass(status) {
+  return status === "ผ่าน";
+}
+
+function isSchoolOk(record) {
+  if (!isSchoolComparable(record)) return true;
+  return record.st45 === "ผ่าน" || record.st45 === "ตัดฐาน";
+}
+
+function recordOverall(record) {
+  const lpaPass = isPass(record.st44);
+  const schoolOk = isSchoolOk(record);
+  if (lpaPass && schoolOk) return "ผ่านตามฐานประเมิน";
+  if (!isSchoolComparable(record)) return "ต้องติดตามด้าน อปท.";
+  if (!lpaPass && !schoolOk) return "ต้องติดตามทั้งสองด้าน";
+  if (!lpaPass) return "ต้องติดตามด้าน อปท.";
+  return "ต้องติดตามด้านสถานศึกษา";
+}
+
+function refreshYearOptions() {
+  if (!els.year) return;
+  const sortedYears = [...new Set(availableYears)].sort((a, b) => b - a);
+  els.year.innerHTML = "";
+  sortedYears.forEach((year) => {
+    const option = document.createElement("option");
+    option.value = String(year);
+    option.textContent = `ปี ${year}`;
+    els.year.appendChild(option);
+  });
+  els.year.value = sortedYears.includes(Number(state.year)) ? String(state.year) : String(sortedYears[0] || state.year);
+  state.year = Number(els.year.value || state.year);
+}
+
+function filterRecords(ignoreKey = "", sourceRecords = records) {
+  const query = state.search.trim().toLowerCase();
+  return sourceRecords.filter((record) => {
+    if (ignoreKey !== "region" && state.region && String(record.region) !== String(state.region)) return false;
+    if (ignoreKey !== "province" && state.province && record.province !== state.province) return false;
+    if (ignoreKey !== "district" && state.district && record.district !== state.district) return false;
+    if (ignoreKey !== "type" && state.type && record.type !== state.type) return false;
+    if (ignoreKey !== "quick" && state.quick !== "all") {
+      const overall = recordOverall(record);
+      if (state.quick === "follow" && overall === "ผ่านตามฐานประเมิน") return false;
+      if (state.quick === "school" && overall !== "ต้องติดตามด้านสถานศึกษา" && overall !== "ต้องติดตามทั้งสองด้าน") return false;
+      if (state.quick === "lpa" && overall !== "ต้องติดตามด้าน อปท." && overall !== "ต้องติดตามทั้งสองด้าน") return false;
+    }
+    if (ignoreKey !== "search" && query) {
+      const haystack = `${record.name} ${record.district} ${record.province} ${record.type}`.toLowerCase();
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  });
+}
+
+function refreshFilterOptions() {
+  refreshYearOptions();
+  const regionBase = filterRecords("region");
+  const provinceBase = filterRecords("province");
+  const districtBase = filterRecords("district");
+  const typeBase = filterRecords("type");
+
+  setOptions(els.region, uniq(regionBase.map((r) => r.region)), "ทุกเขตสุขภาพ", state.region, regionSort);
+  state.region = els.region.value;
+  setOptions(els.province, uniq(provinceBase.map((r) => r.province)), "ทุกจังหวัด", state.province);
+  state.province = els.province.value;
+  setOptions(els.district, uniq(districtBase.map((r) => r.district)), "ทุกอำเภอ", state.district);
+  state.district = els.district.value;
+  setOptions(els.type, uniq(typeBase.map((r) => r.type)), "ทุกประเภท", state.type);
+  state.type = els.type.value;
+}
+
+function summarize(items) {
+  const total = items.length;
+  const pass44 = items.filter((r) => r.st44 === "ผ่าน").length;
+  const fail44 = items.filter((r) => r.st44 === "ไม่ผ่าน").length;
+  const schoolItems = items.filter(isSchoolComparable);
+  const cut45 = schoolItems.filter((r) => r.st45 === "ตัดฐาน").length;
+  const missing45 = schoolItems.filter((r) => r.st45 === "ไม่มีข้อมูล").length;
+  const denominator45 = schoolItems.filter((r) => r.st45 !== "ตัดฐาน" && r.st45 !== "ไม่มีข้อมูล").length;
+  const pass45 = schoolItems.filter((r) => r.st45 === "ผ่าน").length;
+  const fail45 = schoolItems.filter((r) => r.st45 === "ไม่ผ่าน").length;
+  const passOverall = items.filter((r) => recordOverall(r) === "ผ่านตามฐานประเมิน").length;
+  const follow = total - passOverall;
+  return {
+    total,
+    pass44,
+    fail44,
+    rate44: total ? pass44 / total : NaN,
+    cut45,
+    missing45,
+    denominator45,
+    pass45,
+    fail45,
+    rate45: denominator45 ? pass45 / denominator45 : NaN,
+    passOverall,
+    rateOverall: total ? passOverall / total : NaN,
+    follow,
+  };
+}
+
+function scopeLabel() {
+  const parts = [];
+  if (state.region) parts.push(`เขตสุขภาพที่ ${state.region}`);
+  if (state.province) parts.push(state.province);
+  if (state.district) parts.push(state.district);
+  if (state.type) parts.push(state.type);
+  return parts.length ? parts.join(" · ") : "ภาพรวมประเทศ";
+}
+
+function scopedRecordsForYear(year) {
+  const source = recordsByYear.get(Number(year));
+  return source ? filterRecords("", source) : null;
+}
+
+function previousSummary() {
+  const previousYear = Number(state.year) - 1;
+  const previousRecords = scopedRecordsForYear(previousYear);
+  if (!previousRecords) return null;
+  return { year: previousYear, ...summarize(previousRecords) };
+}
+
+function deltaHtml(current, previous, previousYear, suffix = "จุด") {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return "";
+  const diff = (current - previous) * 100;
+  if (Math.abs(diff) < 0.05) {
+    return `<span class="kpi-delta is-flat">0.0 ${suffix} จากปี ${previousYear}</span>`;
+  }
+  const direction = diff > 0 ? "▲" : "▼";
+  const cls = diff > 0 ? "is-up" : "is-down";
+  return `<span class="kpi-delta ${cls}">${direction} ${Math.abs(diff).toFixed(1)} ${suffix} จากปี ${previousYear}</span>`;
+}
+
+function countDeltaHtml(current, previous, previousYear) {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return "";
+  const diff = current - previous;
+  if (diff === 0) return `<span class="kpi-delta is-flat">เท่ากับปี ${previousYear}</span>`;
+  const direction = diff > 0 ? "▲" : "▼";
+  const cls = diff > 0 ? "is-up" : "is-down";
+  return `<span class="kpi-delta ${cls}">${direction} ${fmtInt(Math.abs(diff))} แห่ง จากปี ${previousYear}</span>`;
+}
+
+function followDeltaHtml(current, previous, previousYear) {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return "";
+  const diff = current - previous;
+  if (diff === 0) return `<span class="kpi-delta is-flat">เท่ากับปี ${previousYear}</span>`;
+  const percent = previous > 0 ? ` (${((Math.abs(diff) / previous) * 100).toFixed(1)}%)` : "";
+  const improved = diff < 0;
+  const direction = improved ? "▼" : "▲";
+  const cls = improved ? "is-up" : "is-down";
+  const verb = improved ? "ลดลง" : "เพิ่มขึ้น";
+  return `<span class="kpi-delta ${cls}">${direction} ${verb} ${fmtInt(Math.abs(diff))} แห่ง${percent} จากปี ${previousYear}</span>`;
+}
+
+function formatUpdatedAt(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("th-TH", {
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function updateKpis(items) {
+  const s = summarize(items);
+  const prev = previousSummary();
+  const schoolComparable = hasComparableSchoolData(items);
+  const schoolNote = schoolModeNote(items);
+  els.kpiTotal.textContent = fmtInt(s.total);
+  els.kpiScope.innerHTML = `${scopeLabel()}${prev ? countDeltaHtml(s.total, prev.total, prev.year) : ""}`;
+  els.kpi44Rate.textContent = fmtPct(s.rate44);
+  els.kpi44Detail.innerHTML = `${fmtInt(s.pass44)} ผ่าน · ${fmtInt(s.fail44)} ไม่ผ่าน${prev ? deltaHtml(s.rate44, prev.rate44, prev.year) : ""}`;
+  els.kpi45Rate.textContent = schoolComparable ? fmtPct(s.rate45) : "ไม่มีข้อมูล";
+  els.kpi45Detail.innerHTML = schoolComparable
+    ? `${fmtInt(s.pass45)} ผ่าน จากฐาน ${fmtInt(s.denominator45)} · ตัดฐาน ${fmtInt(s.cut45)}${prev ? deltaHtml(s.rate45, prev.rate45, prev.year) : ""}${schoolNote ? `<span class="kpi-note">${schoolNote}</span>` : ""}`
+    : schoolNote;
+  els.kpiFollow.textContent = fmtInt(s.follow);
+  els.kpiFollowDetail.innerHTML = `ผ่านภาพรวม ${fmtInt(s.passOverall)} แห่ง${prev ? followDeltaHtml(s.follow, prev.follow, prev.year) : ""}<span class="kpi-note">${overallBasisText(items)}</span>`;
+  els.caption.textContent = "";
+  if (els.updatedAt) els.updatedAt.textContent = `วันที่อัปเดตข้อมูล: ${formatUpdatedAt(generatedAt)}`;
+  if (els.footerDataStatus) els.footerDataStatus.textContent = dataSourceLabel || "เชื่อมข้อมูลสดจาก Google Sheets";
+  els.mapPill.textContent = `${fmtInt(uniq(items.map((r) => r.province)).length)} จังหวัด`;
+}
+
+function updateQuickButtons() {
+  quickButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.quick === state.quick);
+  });
+}
+
+function updateRankMetricAvailability(items) {
+  const schoolOption = [...els.rankMetric.options].find((option) => option.value === "rate45");
+  const schoolAvailable = hasComparableSchoolData(items);
+  if (schoolOption) schoolOption.disabled = !schoolAvailable;
+  if (!schoolAvailable && state.rankMetric === "rate45") {
+    state.rankMetric = "follow";
+    els.rankMetric.value = "follow";
+  }
+}
+
+function groupBy(items, key) {
+  const map = new Map();
+  items.forEach((item) => {
+    const group = item[key] || "ไม่ระบุ";
+    if (!map.has(group)) map.set(group, []);
+    map.get(group).push(item);
+  });
+  return [...map.entries()];
+}
+
+function hasComparableSchoolData(items) {
+  return items.some((item) => isSchoolComparable(item));
+}
+
+function schoolModeNote(items) {
+  if (hasComparableSchoolData(items)) {
+    const phases = uniq(items.map((item) => item.schoolPhase)).filter(Boolean);
+    return phases.includes("นำร่อง") ? "ข้อมูลด้านสถานศึกษาเป็นช่วงนำร่อง" : "";
+  }
+  return "ปีนี้ไม่มีข้อมูลเปรียบเทียบด้านสถานศึกษา";
+}
+
+function overallBasisText(items) {
+  if (!items.length) return "ไม่มีข้อมูลในเงื่อนไขนี้";
+  return hasComparableSchoolData(items)
+    ? "คำนวณจากด้าน อปท. และด้านสถานศึกษา"
+    : "คำนวณจากด้าน อปท. เท่านั้น";
+}
+
+function yearContextMessage(items) {
+  if (!items.length) return "";
+  const year = Number(state.year);
+  if (!hasComparableSchoolData(items)) {
+    return "ปีนี้ประเมินภาพรวมจากด้าน อปท. เท่านั้น เนื่องจากไม่มีข้อมูลสถานศึกษาแบบเปรียบเทียบได้";
+  }
+  if (year === 2567) {
+    return "ปี 2567 เป็นข้อมูลนำร่องด้านสถานศึกษา จึงควรอ่านการเปรียบเทียบข้ามปีกับปี 2565-2566 อย่างระมัดระวัง";
+  }
+  return "";
+}
+
+function updateYearContext(items) {
+  if (!els.yearContextNote) return;
+  const message = yearContextMessage(items);
+  els.yearContextNote.textContent = message;
+  els.yearContextNote.hidden = !message;
+}
+
+function updateRegionChart(items) {
+  const grouped = groupBy(items, "region")
+    .filter(([region]) => region !== "ไม่ระบุ")
+    .sort((a, b) => Number(a[0]) - Number(b[0]));
+
+  if (!grouped.length) {
+    els.regionChart.innerHTML = `<p class="empty">ไม่มีข้อมูลในเงื่อนไขนี้</p>`;
+    return;
+  }
+
+  const width = 1280;
+  const height = 430;
+  const margin = { top: 56, right: 34, bottom: 64, left: 70 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const groupW = plotW / grouped.length;
+  const barW = Math.min(38, groupW * 0.34);
+  const y = (rate) => margin.top + plotH - Math.max(0, Math.min(1, rate || 0)) * plotH;
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const barPath = (x, topY, w, h, radius = 4) => {
+    const r = Math.min(radius, w / 2, h);
+    const bottomY = topY + h;
+    return `M${x},${bottomY} L${x},${topY + r} Q${x},${topY} ${x + r},${topY} L${x + w - r},${topY} Q${x + w},${topY} ${x + w},${topY + r} L${x + w},${bottomY} Z`;
+  };
+
+  const grid = ticks.map((tick) => {
+    const yy = y(tick);
+    return `
+      <line class="grid-line" x1="${margin.left}" y1="${yy}" x2="${width - margin.right}" y2="${yy}"></line>
+      <text class="axis-text" x="${margin.left - 10}" y="${yy + 4}" text-anchor="end">${Math.round(tick * 100)}</text>
+    `;
+  }).join("");
+
+  const bars = grouped.map(([region, rows], index) => {
+    const s = summarize(rows);
+    const showSchool = s.denominator45 > 0;
+    const selected = state.region && String(region) === String(state.region);
+    const muted = state.region && !selected;
+    const xCenter = margin.left + index * groupW + groupW / 2;
+    const x44 = showSchool ? xCenter - barW - 3 : xCenter - barW / 2;
+    const x45 = xCenter + 3;
+    const y44 = y(s.rate44);
+    const y45 = y(s.rate45);
+    const h44 = margin.top + plotH - y44;
+    const h45 = margin.top + plotH - y45;
+    const label44Y = Math.max(14, y44 - 8);
+    const label45Y = Math.max(28, y45 - 8);
+    return `
+      ${selected ? `<rect class="region-highlight" x="${xCenter - groupW / 2 + 8}" y="${margin.top - 18}" width="${groupW - 16}" height="${plotH + 34}" rx="8"></rect>` : ""}
+      <path class="region-bar-44 ${muted ? "is-muted" : ""}" d="${barPath(x44, y44, barW, h44)}"></path>
+      ${showSchool ? `<path class="region-bar-45 ${muted ? "is-muted" : ""}" d="${barPath(x45, y45, barW, h45)}"></path>` : ""}
+      <text class="bar-value-label ${muted ? "is-muted" : ""}" x="${x44 + barW / 2}" y="${label44Y}" text-anchor="middle">${fmtRateNumber(s.rate44)}</text>
+      ${showSchool ? `<text class="bar-value-label ${muted ? "is-muted" : ""}" x="${x45 + barW / 2}" y="${label45Y}" text-anchor="middle">${fmtRateNumber(s.rate45)}</text>` : ""}
+      <text class="axis-text ${selected ? "is-selected" : ""}" x="${xCenter}" y="${height - 18}" text-anchor="middle">${region}</text>
+    `;
+  }).join("");
+
+  els.regionChart.innerHTML = `
+    <svg class="region-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟแท่งร้อยละ แกน X คือเขตสุขภาพ แกน Y คือร้อยละ">
+      ${grid}
+      <line class="axis-line" x1="${margin.left}" y1="${margin.top + plotH}" x2="${width - margin.right}" y2="${margin.top + plotH}"></line>
+      <line class="axis-line" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}"></line>
+      ${bars}
+      <text class="axis-text" x="20" y="${margin.top + plotH / 2}" text-anchor="middle" transform="rotate(-90 20 ${margin.top + plotH / 2})">ร้อยละ</text>
+      <text class="axis-text" x="${margin.left + plotW / 2}" y="${height - 2}" text-anchor="middle">เขตสุขภาพ</text>
+    </svg>
+  `;
+}
+
+function updateTrendChart(items) {
+  const cachedYears = availableYears.filter((year) => recordsByYear.has(Number(year))).sort((a, b) => Number(a) - Number(b));
+  const hasActiveFilter = Boolean(state.region || state.province || state.district || state.type || state.search || state.quick !== "all");
+  const summaries = cachedYears.length && (hasActiveFilter || cachedYears.length === availableYears.length)
+    ? cachedYears.map((year) => {
+      const yearItems = filterRecords("", recordsByYear.get(Number(year)));
+      const s = summarize(yearItems);
+      return {
+        year,
+        lpa_side_pass_rate: s.rate44,
+        school_side_pass_rate: s.rate45,
+        school_side_comparable: hasComparableSchoolData(yearItems) ? "ใช่" : "ไม่ใช่",
+      };
+    })
+    : countrySummaries.length
+      ? [...countrySummaries].sort((a, b) => Number(a.year) - Number(b.year))
+      : [{ year: state.year, lpa_side_pass_rate: summarize(items).rate44, school_side_pass_rate: summarize(items).rate45, school_side_comparable: hasComparableSchoolData(items) ? "ใช่" : "ไม่ใช่" }];
+  const width = 1180;
+  const height = 420;
+  const margin = { top: 64, right: 82, bottom: 58, left: 70 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const years = summaries.map((row) => Number(row.year));
+  const x = (index) => margin.left + (summaries.length === 1 ? plotW / 2 : index * (plotW / (summaries.length - 1)));
+  const y = (rate) => margin.top + plotH - Math.max(0, Math.min(1, rate || 0)) * plotH;
+  const toRate = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : NaN;
+  };
+  const points44 = summaries
+    .map((row, index) => ({ x: x(index), y: y(toRate(row.lpa_side_pass_rate)), rate: toRate(row.lpa_side_pass_rate), year: row.year }))
+    .filter((point) => Number.isFinite(point.rate));
+  const points45 = summaries
+    .map((row, index) => ({ x: x(index), y: y(toRate(row.school_side_pass_rate)), rate: toRate(row.school_side_pass_rate), year: row.year, comparable: row.school_side_comparable === "ใช่" }))
+    .filter((point) => point.comparable && Number.isFinite(point.rate));
+  const path = (points) => points.map((p, i) => `${i ? "L" : "M"}${p.x},${p.y}`).join(" ");
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const pilotIndex = years.findIndex((year) => Number(year) === 2567);
+  const pilotX = pilotIndex >= 0 ? x(pilotIndex) : null;
+  const valueLabel = (point, series, pointIndex) => {
+    const paired = series === "school"
+      ? points44.find((item) => Number(item.year) === Number(point.year))
+      : points45.find((item) => Number(item.year) === Number(point.year));
+    const nearPair = paired && Math.abs(paired.y - point.y) < 30;
+    const lastPoint = Number(point.year) === Math.max(...years);
+    let dy;
+    if (series === "school") {
+      dy = nearPair ? 28 : 24;
+    } else {
+      dy = nearPair ? -22 : -14;
+    }
+    let xShift = 0;
+    if (pointIndex === 0) xShift = 18;
+    if (lastPoint) xShift = -16;
+    return `<text class="trend-value trend-value-${series}" x="${point.x + xShift}" y="${point.y + dy}" text-anchor="middle">${fmtRateNumber(point.rate)}</text>`;
+  };
+  els.trendChart.innerHTML = `
+    <svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟเส้นแนวโน้มร้อยละผ่านรายปี">
+      ${ticks.map((tick) => {
+        const yy = y(tick);
+        return `
+          <line class="trend-grid" x1="${margin.left}" y1="${yy}" x2="${width - margin.right}" y2="${yy}"></line>
+          <text class="trend-label" x="${margin.left - 8}" y="${yy + 4}" text-anchor="end">${Math.round(tick * 100)}</text>
+        `;
+      }).join("")}
+      <line class="trend-axis" x1="${margin.left}" y1="${margin.top + plotH}" x2="${width - margin.right}" y2="${margin.top + plotH}"></line>
+      <line class="trend-axis" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}"></line>
+      ${pilotX !== null ? `<line class="trend-marker" x1="${pilotX}" y1="${margin.top}" x2="${pilotX}" y2="${margin.top + plotH}"></line><text class="trend-marker-label" x="${pilotX + 12}" y="${margin.top + 22}">เริ่มข้อมูลสถานศึกษานำร่อง</text>` : ""}
+      <path class="trend-line-44" d="${path(points44)}"></path>
+      ${points45.length > 1 ? `<path class="trend-line-45" d="${path(points45)}"></path>` : ""}
+      ${points44.map((point, index) => `<circle class="trend-dot-44" cx="${point.x}" cy="${point.y}" r="6"></circle>${valueLabel(point, "lpa", index)}`).join("")}
+      ${points45.map((point, index) => `<circle class="trend-dot-45" cx="${point.x}" cy="${point.y}" r="6"></circle>${valueLabel(point, "school", index)}`).join("")}
+      ${years.map((year, index) => `<text class="trend-label" x="${x(index)}" y="${height - 12}" text-anchor="middle">${year}</text>`).join("")}
+      <text class="trend-label" x="${margin.left + 6}" y="28">ร้อยละ</text>
+      <text class="trend-label" x="${width - margin.right}" y="28" text-anchor="end">สถานศึกษาแสดงเฉพาะปีที่เทียบได้</text>
+    </svg>
+  `;
+}
+
+function provinceStats(items) {
+  return groupBy(items, "province").map(([province, rows]) => {
+    const s = summarize(rows);
+    return { province, rows, ...s };
+  });
+}
+
+function updateProvinceRanking(items) {
+  const metric = state.rankMetric;
+  let stats = provinceStats(items).filter((s) => s.total > 0);
+  if (metric === "follow") {
+    stats = stats.sort((a, b) => b.follow - a.follow || b.total - a.total);
+  } else if (metric === "rate44") {
+    stats = stats.sort((a, b) => a.rate44 - b.rate44 || b.total - a.total);
+  } else if (metric === "rate45") {
+    stats = stats
+      .filter((s) => Number.isFinite(s.rate45))
+      .sort((a, b) => a.rate45 - b.rate45 || b.total - a.total);
+  } else {
+    stats = stats.sort((a, b) => b.follow - a.follow || b.total - a.total);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(stats.length / state.rankPageSize));
+  if (state.rankPage > totalPages) state.rankPage = totalPages;
+  const start = (state.rankPage - 1) * state.rankPageSize;
+  const shown = stats.slice(start, start + state.rankPageSize);
+  els.rankPageInfo.textContent = `หน้า ${fmtInt(state.rankPage)} จาก ${fmtInt(totalPages)}`;
+  els.rankPrev.disabled = state.rankPage <= 1;
+  els.rankNext.disabled = state.rankPage >= totalPages;
+
+  els.provinceRanking.innerHTML = shown.map((s, index) => {
+    const value = metric === "follow" ? s.follow : metric === "rate44" ? s.rate44 : s.rate45;
+    const pct = metric === "follow" ? (s.total ? value / s.total : 0) : value;
+    const label = metric === "follow"
+      ? `${fmtInt(s.follow)} แห่ง (${fmtPct(pct)}) จาก ${fmtInt(s.total)} อปท.`
+      : metric === "rate44"
+        ? `ผ่านด้าน อปท. ${fmtPct(s.rate44)} · ไม่ผ่าน ${fmtInt(s.fail44)}`
+        : metric === "rate45"
+          ? `ผ่านด้านสถานศึกษา ${fmtPct(s.rate45)} · ไม่ผ่าน ${fmtInt(s.fail45)}`
+          : `${fmtInt(s.follow)} แห่ง (${fmtPct(pct)}) จาก ${fmtInt(s.total)} อปท.`;
+    return `
+      <div class="rank-item">
+        <span class="rank-no">${start + index + 1}</span>
+        <div class="rank-title"><strong>${s.province}</strong><span>${fmtInt(s.total)} อปท.</span></div>
+        <div class="rank-visual">
+          <div class="mini-track"><div class="mini-fill" style="width:${Math.max(2, Math.min(100, pct * 100))}%"></div></div>
+          <div class="rank-value">${label}</div>
+        </div>
+      </div>
+    `;
+  }).join("") || `<p class="empty">ไม่มีข้อมูลในเงื่อนไขนี้</p>`;
+}
+
+function updateStatusChart(items) {
+  const total = items.length || 1;
+  const counts = Object.fromEntries(statusOrder.map((status) => [status, 0]));
+  items.forEach((item) => {
+    const overall = recordOverall(item);
+    counts[overall] = (counts[overall] || 0) + 1;
+  });
+
+  let angle = 0;
+  const stops = statusOrder.map((status) => {
+    const start = angle;
+    const size = counts[status] / total * 360;
+    angle += size;
+    return `${statusColors[status]} ${start}deg ${angle}deg`;
+  }).join(", ");
+
+  const legend = statusOrder.map((status) => `
+    <div class="legend-item">
+      <span class="legend-dot" style="background:${statusColors[status]}"></span>
+      <span>${status}</span>
+      <strong>${fmtInt(counts[status])}</strong>
+      <strong class="legend-percent">${fmtPct(counts[status] / total)}</strong>
+    </div>
+  `).join("");
+
+  els.statusChart.innerHTML = `
+    <div class="donut-wrap">
+      <div class="donut" style="background:conic-gradient(${stops})" role="img" aria-label="สัดส่วนสถานะรวม"></div>
+      <div class="legend-list">${legend}</div>
+    </div>
+  `;
+}
+
+function updateDistrictSummary(items) {
+  if (!state.province) {
+    els.districtPanel.style.display = "none";
+    return;
+  }
+  els.districtPanel.style.display = "";
+  const grouped = groupBy(items, "district")
+    .filter(([district]) => district !== "ไม่ระบุ")
+    .map(([district, rows]) => ({ district, ...summarize(rows) }))
+    .sort((a, b) => b.follow - a.follow || b.total - a.total || a.district.localeCompare(b.district, "th"));
+  els.districtCount.textContent = `${fmtInt(grouped.length)} อำเภอ`;
+  els.districtSummary.innerHTML = grouped.slice(0, 12).map((item) => `
+    <div class="district-item">
+      <strong>${item.district}</strong>
+      <span>${fmtInt(item.total)} อปท. · ต้องติดตาม ${fmtInt(item.follow)}</span>
+      <span>อปท. ${fmtPct(item.rate44)} · สถานศึกษา ${fmtPct(item.rate45)}</span>
+    </div>
+  `).join("") || `<p class="empty">ไม่มีข้อมูลในเงื่อนไขนี้</p>`;
+}
+
+function badgeClass(status) {
+  if (status === "ผ่าน") return "pass";
+  if (status === "ตัดฐาน") return "cut";
+  if (status === "ไม่มีข้อมูล") return "missing";
+  if (status === "ok") return "ok";
+  if (status === "ผ่านตามฐานประเมิน") return "pass";
+  if (status === "ต้องติดตามทั้งสองด้าน") return "both";
+  return "follow";
+}
+
+function scoreText(record, indicator) {
+  if (indicator === "44") {
+    return record.s44 === "" ? "ไม่มีข้อมูล" : `${record.s44} คะแนน`;
+  }
+  if (record.schoolComparable !== "ใช่") return "ไม่มีข้อมูลเปรียบเทียบ";
+  if (record.st45 === "ตัดฐาน" || record.st45 === "ไม่มีข้อมูล") return record.st45;
+  return `${record.s45} คะแนน`;
+}
+
+function schoolStatusLabel(record) {
+  return record.schoolComparable === "ใช่" ? record.st45 : "ไม่เปรียบเทียบ";
+}
+
+function updateTable(items) {
+  const priority = {
+    "ต้องติดตามทั้งสองด้าน": 0,
+    "ต้องติดตามด้านสถานศึกษา": 1,
+    "ต้องติดตามด้าน อปท.": 2,
+    "ผ่านตามฐานประเมิน": 3,
+  };
+  const usePrioritySort = Boolean(state.province || state.district);
+  const sorted = [...items].sort((a, b) => {
+    const aOverall = recordOverall(a);
+    const bOverall = recordOverall(b);
+    if (usePrioritySort) {
+      return priority[aOverall] - priority[bOverall]
+        || a.province.localeCompare(b.province, "th")
+        || a.district.localeCompare(b.district, "th")
+        || a.name.localeCompare(b.name, "th");
+    }
+    return a.province.localeCompare(b.province, "th")
+      || a.district.localeCompare(b.district, "th")
+      || priority[aOverall] - priority[bOverall]
+      || a.name.localeCompare(b.name, "th");
+  });
+  const totalPages = Math.max(1, Math.ceil(sorted.length / state.pageSize));
+  if (state.page > totalPages) state.page = totalPages;
+  const start = (state.page - 1) * state.pageSize;
+  const shown = sorted.slice(start, start + state.pageSize);
+  const end = sorted.length ? start + shown.length : 0;
+  els.tableCount.textContent = `แสดง ${fmtInt(start + 1)}-${fmtInt(end)} จาก ${fmtInt(items.length)} แถว`;
+  els.pageInfo.textContent = `หน้า ${fmtInt(state.page)} จาก ${fmtInt(totalPages)}`;
+  els.prevPage.disabled = state.page <= 1;
+  els.nextPage.disabled = state.page >= totalPages;
+  els.table.innerHTML = shown.map((record) => `
+    <tr>
+      <td class="area-cell">
+        <strong>${record.province}</strong>
+        <span>เขตสุขภาพที่ ${record.region}</span>
+      </td>
+      <td class="area-cell">
+        <strong>${record.district}</strong>
+      </td>
+      <td class="name-cell">
+        <strong>${record.name}</strong>
+        <span>${record.type}</span>
+      </td>
+      <td>
+        <span class="status-badge ${badgeClass(record.st44)}">${record.st44}</span>
+        <div class="score-note">${scoreText(record, "44")}</div>
+      </td>
+      <td>
+        <span class="status-badge ${badgeClass(schoolStatusLabel(record))}">${schoolStatusLabel(record)}</span>
+        <div class="score-note">${scoreText(record, "45")}</div>
+      </td>
+      <td><span class="status-badge ${badgeClass(recordOverall(record))}">${recordOverall(record)}</span></td>
+    </tr>
+  `).join("") || `<tr><td colspan="6">ไม่มีข้อมูลในเงื่อนไขนี้</td></tr>`;
+}
+
+function render() {
+  refreshFilterOptions();
+  const items = filterRecords();
+  const regionItems = filterRecords("region");
+  updateQuickButtons();
+  updateRankMetricAvailability(items);
+  updateKpis(items);
+  updateYearContext(items);
+  updateRegionChart(regionItems);
+  updateTrendChart(items);
+  updateProvinceRanking(items);
+  updateStatusChart(items);
+  updateDistrictSummary(items);
+  updateTable(items);
+}
+
+function updateStateFromControls() {
+  state.region = els.region.value;
+  state.province = els.province.value;
+  state.district = els.district.value;
+  state.type = els.type.value;
+  state.search = els.search.value;
+  state.rankMetric = els.rankMetric.value;
+  state.page = 1;
+  state.rankPage = 1;
+  render();
+}
+
+[els.region, els.province, els.district, els.type, els.rankMetric].forEach((el) => {
+  el.addEventListener("change", updateStateFromControls);
+});
+if (els.year) {
+  els.year.addEventListener("change", async () => {
+    const selectedYear = Number(els.year.value);
+    Object.assign(state, { year: selectedYear, region: "", province: "", district: "", type: "", search: "", rankMetric: "follow", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
+    els.search.value = "";
+    els.rankMetric.value = "follow";
+    els.pageSize.value = "10";
+    if (recordsByYear.has(selectedYear) && liveCachedYears.has(selectedYear)) {
+      await loadLiveRecords(selectedYear);
+      render();
+      preloadTrendYears();
+      return;
+    }
+    setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
+    try {
+      dataSourceMode = "loading";
+      dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${selectedYear}`;
+      await loadLiveRecords(selectedYear);
+      render();
+      preloadTrendYears();
+    } finally {
+      setLoading(false);
+    }
+  });
+}
+els.search.addEventListener("input", updateStateFromControls);
+quickButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    state.quick = button.dataset.quick;
+    state.page = 1;
+    state.rankPage = 1;
+    render();
+  });
+});
+els.rankPrev.addEventListener("click", () => {
+  state.rankPage = Math.max(1, state.rankPage - 1);
+  render();
+});
+els.rankNext.addEventListener("click", () => {
+  state.rankPage += 1;
+  render();
+});
+els.pageSize.addEventListener("change", () => {
+  state.pageSize = Number(els.pageSize.value);
+  state.page = 1;
+  render();
+});
+els.prevPage.addEventListener("click", () => {
+  state.page = Math.max(1, state.page - 1);
+  render();
+});
+els.nextPage.addEventListener("click", () => {
+  state.page += 1;
+  render();
+});
+els.reset.addEventListener("click", () => {
+  Object.assign(state, { region: "", province: "", district: "", type: "", search: "", rankMetric: "follow", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
+  els.search.value = "";
+  els.rankMetric.value = "follow";
+  els.pageSize.value = "10";
+  render();
+});
+
+async function initDashboard() {
+  setLoading(true, `กำลังโหลดข้อมูลปี ${state.year}`);
+  try {
+    const liveLoaded = await loadLiveRecords();
+    if (liveLoaded) {
+      state.page = 1;
+      state.rankPage = 1;
+      render();
+      preloadTrendYears();
+    } else {
+      render();
+    }
+  } finally {
+    setLoading(false);
+  }
+  if (!records.length) {
+    render();
+  }
+}
+
+initDashboard();

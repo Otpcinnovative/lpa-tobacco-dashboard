@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LPA Tobacco Control Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body class="is-loading">
+  <div class="app-shell">
+    <header class="page-header">
+      <div>
+        <h1>Dashboard การดำเนินงานควบคุมผลิตภัณฑ์ยาสูบขององค์กรปกครองส่วนท้องถิ่น</h1>
+      </div>
+    </header>
+
+    <section class="filter-band" aria-label="ตัวกรองข้อมูล">
+      <div class="filter-grid">
+        <label>
+          <span>ปีข้อมูล</span>
+          <select id="yearFilter"></select>
+        </label>
+        <label>
+          <span>เขตสุขภาพ</span>
+          <select id="regionFilter"></select>
+        </label>
+        <label>
+          <span>จังหวัด</span>
+          <select id="provinceFilter"></select>
+        </label>
+        <label>
+          <span>อำเภอ</span>
+          <select id="districtFilter"></select>
+        </label>
+        <label>
+          <span>ประเภท อปท.</span>
+          <select id="typeFilter"></select>
+        </label>
+        <label class="search-field">
+          <span>ค้นหา อปท.</span>
+          <input id="searchInput" type="search" placeholder="ชื่อ อปท. / อำเภอ / จังหวัด">
+        </label>
+      </div>
+      <div class="filter-actions">
+        <div class="quick-filter-group" aria-label="ตัวกรองเร็ว">
+          <button class="quick-filter is-active" type="button" data-quick="all">ทั้งหมด</button>
+          <button class="quick-filter" type="button" data-quick="lpa">ด้าน อปท.</button>
+          <button class="quick-filter" type="button" data-quick="school">ด้านสถานศึกษา</button>
+          <button class="quick-filter" type="button" data-quick="follow">เฉพาะที่ควรติดตาม</button>
+        </div>
+        <button id="resetFilters" class="reset-button" type="button"><span aria-hidden="true">↺</span> ล้างตัวกรอง</button>
+        <span id="filterCaption"></span>
+      </div>
+    </section>
+
+    <section class="definition-strip" aria-label="นิยามการแปลผล">
+      <div>
+        <strong>เกณฑ์ผ่าน</strong>
+        <span>ด้าน อปท. และด้านสถานศึกษาสังกัด อปท. ผ่านเมื่อได้คะแนนตั้งแต่ 3 คะแนนขึ้นไป</span>
+      </div>
+      <div>
+        <strong>ตัดฐาน</strong>
+        <span>ใช้กับด้านสถานศึกษาเมื่อ อปท. ไม่มีสถานศึกษา/โรงเรียน หรือไม่ต้องประเมิน จึงไม่นำเข้า denominator</span>
+      </div>
+    </section>
+
+    <main>
+      <section class="kpi-grid" aria-label="ตัวชี้วัดหลัก">
+        <article class="kpi-card kpi-total">
+          <span class="kpi-label">อปท. ในมุมมองนี้</span>
+          <strong id="kpiTotal">-</strong>
+          <small id="kpiScope">-</small>
+        </article>
+        <article class="kpi-card kpi-44">
+          <span class="kpi-label">ด้าน อปท. ควบคุมผลิตภัณฑ์ยาสูบ</span>
+          <strong id="kpi44Rate">-</strong>
+          <small id="kpi44Detail">-</small>
+        </article>
+        <article class="kpi-card kpi-45">
+          <span class="kpi-label">สถานศึกษาสังกัด อปท. ควบคุมผลิตภัณฑ์ยาสูบ</span>
+          <strong id="kpi45Rate">-</strong>
+          <small id="kpi45Detail">-</small>
+        </article>
+        <article class="kpi-card kpi-watch">
+          <span class="kpi-label">อปท. ที่ควรติดตาม</span>
+          <strong id="kpiFollow">-</strong>
+          <small id="kpiFollowDetail">-</small>
+        </article>
+      </section>
+
+      <div class="year-context-note" id="yearContextNote" hidden></div>
+
+      <section class="top-visual-grid">
+        <article class="panel line-panel">
+          <div class="section-heading">
+            <div>
+              <h2>กราฟเส้นเทียบรายปี</h2>
+            </div>
+          </div>
+          <div class="chart-legend" aria-label="คำอธิบายสีกราฟ">
+            <span><i class="legend-swatch swatch-44"></i>ด้าน อปท.</span>
+            <span><i class="legend-swatch swatch-45"></i>ด้านสถานศึกษา</span>
+          </div>
+          <div id="trendChart" class="trend-placeholder" aria-label="กราฟเส้นรายปี"></div>
+        </article>
+
+        <article class="panel region-panel">
+          <div class="section-heading">
+            <div>
+              <h2>กราฟแท่งเรียงตามเขตสุขภาพ</h2>
+            </div>
+          </div>
+          <div class="chart-legend" aria-label="คำอธิบายสีกราฟ">
+            <span><i class="legend-swatch swatch-44"></i>ด้าน อปท.</span>
+            <span><i class="legend-swatch swatch-45"></i>ด้านสถานศึกษา</span>
+          </div>
+          <div id="regionChart" class="vertical-chart" aria-label="กราฟแท่งร้อยละผ่านรายเขตสุขภาพ"></div>
+        </article>
+
+        <article class="panel map-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Geographic Overview</p>
+              <h2>พื้นที่สำหรับแผนที่ประเทศไทย</h2>
+            </div>
+            <span class="metric-pill" id="mapPill">76 จังหวัด</span>
+          </div>
+          <div class="map-placeholder" role="img" aria-label="พื้นที่เตรียมไว้สำหรับแผนที่ประเทศไทยในอนาคต">
+            <div class="map-shape">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div>
+              <strong>เว้นพื้นที่สำหรับ Thailand choropleth map</strong>
+              <p>ในเวอร์ชันถัดไปสามารถใส่ GeoJSON จังหวัดไทย และลงสีตามร้อยละผ่านหรือจำนวนพื้นที่ที่ต้องติดตาม</p>
+            </div>
+          </div>
+        </article>
+
+      </section>
+
+      <section class="analysis-grid">
+        <article class="panel">
+          <div class="section-heading">
+            <div>
+              <h2>จังหวัดที่ไม่ผ่านหรือควรติดตามมากสุด</h2>
+            </div>
+            <label class="inline-control">
+              <span>ตัวชี้วัด</span>
+              <select id="rankMetric" aria-label="ตัวชี้วัด">
+                <option value="follow">ควรติดตามมากสุด</option>
+                <option value="rate44">ด้าน อปท. ต่ำสุด</option>
+                <option value="rate45">ด้านสถานศึกษาต่ำสุด</option>
+              </select>
+            </label>
+          </div>
+          <div id="provinceRanking" class="ranking-list"></div>
+          <div class="ranking-pagination" aria-label="การแบ่งหน้าจังหวัดที่ควรติดตาม">
+            <button id="rankPrev" type="button" aria-label="หน้าก่อนหน้า">&lt;</button>
+            <span id="rankPageInfo">-</span>
+            <button id="rankNext" type="button" aria-label="หน้าถัดไป">&gt;</button>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="section-heading">
+            <div>
+              <h2>สัดส่วนสถานะรวม</h2>
+            </div>
+          </div>
+          <div id="statusChart" class="status-chart"></div>
+        </article>
+      </section>
+
+      <section class="panel district-panel" id="districtPanel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">District Summary</p>
+            <h2>สรุประดับอำเภอในมุมมองที่เลือก</h2>
+          </div>
+          <span class="metric-pill" id="districtCount">-</span>
+        </div>
+        <div id="districtSummary" class="district-summary"></div>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="section-heading">
+          <div>
+            <h2>รายละเอียด อปท.</h2>
+          </div>
+          <span class="metric-pill" id="tableCount">-</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>จังหวัด</th>
+                <th>อำเภอ</th>
+                <th>อปท.</th>
+                <th>ด้าน อปท.</th>
+                <th>ด้านสถานศึกษา</th>
+                <th>ภาพรวม</th>
+              </tr>
+            </thead>
+            <tbody id="lpaTable"></tbody>
+          </table>
+        </div>
+        <div class="pagination-bar" aria-label="การแบ่งหน้าตาราง">
+          <label>
+            <span>แสดงแถว</span>
+            <select id="pageSize">
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </label>
+          <div class="page-controls">
+            <button id="prevPage" type="button" aria-label="หน้าก่อนหน้า">&lt;</button>
+            <span id="pageInfo">-</span>
+            <button id="nextPage" type="button" aria-label="หน้าถัดไป">&gt;</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <p>จัดทำโดย กองงานคณะกรรมการควบคุมผลิตภัณฑ์ยาสูบ กรมควบคุมโรค · โทร: 0 2195 5803</p>
+      <p id="updatedAtText">วันที่อัปเดตข้อมูล: -</p>
+      <p class="footer-live" id="footerDataStatus">เชื่อมข้อมูลสดจาก Google Sheets</p>
+    </footer>
+  </div>
+
+  <div class="loading-overlay is-visible" id="loadingOverlay" aria-live="polite" aria-hidden="false">
+    <div class="loading-card">
+      <span class="loading-spinner" aria-hidden="true"></span>
+      <strong id="loadingTitle">กำลังโหลดข้อมูล</strong>
+      <span id="loadingText">กำลังเชื่อมข้อมูลจาก Google Sheets</span>
+    </div>
+  </div>
+
+  <script src="assets/config.js"></script>
+  <script src="assets/lpa-data.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Internal source data and working files
+*.xlsx
+outputs/
+scripts/
+apps_script/
+
+# Local project guidance and development-only notes
+.agents/
+AGENTS.md
+DASHBOARD_REQUIREMENTS.md
+STYLE_GUIDE.md
+
+# Historical local backups. Keep these locally, not on the public Pages repo.
+versions/
+.git-broken-backup-*/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini

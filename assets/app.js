@@ -487,13 +487,22 @@ function overallBasisText(items) {
 function yearContextMessage(items) {
   if (!items.length) return "";
   const year = Number(state.year);
+  const messages = [];
+  if (state.quick === "lpa") {
+    messages.push("กำลังแสดงเฉพาะ อปท. ที่ต้องติดตามด้าน อปท. ค่า KPI ด้าน อปท. จึงสะท้อนผลของกลุ่มที่ยังไม่ผ่านด้านนี้");
+  } else if (state.quick === "school") {
+    messages.push("กำลังแสดงเฉพาะ อปท. ที่ต้องติดตามด้านสถานศึกษา ค่า KPI ด้านสถานศึกษาจึงสะท้อนผลของกลุ่มที่ยังไม่ผ่านด้านนี้");
+  } else if (state.quick === "follow") {
+    messages.push("กำลังแสดงเฉพาะ อปท. ที่ควรติดตามอย่างน้อย 1 ด้าน");
+  }
   if (!hasComparableSchoolData(items)) {
-    return "ปีนี้ประเมินภาพรวมจากด้าน อปท. เท่านั้น เนื่องจากไม่มีข้อมูลสถานศึกษาแบบเปรียบเทียบได้";
+    messages.push("ปีนี้ประเมินภาพรวมจากด้าน อปท. เท่านั้น เนื่องจากไม่มีข้อมูลสถานศึกษาแบบเปรียบเทียบได้");
+    return messages.join(" · ");
   }
   if (year === 2567) {
-    return "ปี 2567 เป็นข้อมูลนำร่องด้านสถานศึกษา จึงควรอ่านการเปรียบเทียบข้ามปีกับปี 2565-2566 อย่างระมัดระวัง";
+    messages.push("ปี 2567 เป็นข้อมูลนำร่องด้านสถานศึกษา จึงควรอ่านการเปรียบเทียบข้ามปีกับปี 2565-2566 อย่างระมัดระวัง");
   }
-  return "";
+  return messages.join(" · ");
 }
 
 function updateYearContext(items) {

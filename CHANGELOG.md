@@ -1,6 +1,10 @@
 # Changelog
 
-## Current: v2.6 live multi-year dashboard
+## Current: v2.7 live multi-year dashboard
+
+- Preserved the pre-quick-filter-clarity dashboard as `versions/v2.7-pre-quick-filter-clarity/`.
+- Renamed the quick filters from broad side labels to follow-up labels so users understand they filter problem groups, not switch KPI modes.
+- Added contextual notes when quick filters are active to explain why KPI values can change sharply after selecting a follow-up side.
 
 - Preserved the pre-GitHub-prep dashboard as `versions/v2.7-pre-github-prep/`.
 - Added public GitHub Pages preparation files: `.gitignore`, `.nojekyll`, and `README.md`.

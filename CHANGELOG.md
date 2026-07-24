@@ -1,6 +1,12 @@
 # Changelog
 
-## Current: v2.10 live multi-year dashboard
+## Current: v2.11 live multi-year dashboard
+
+- Preserved the accepted V2.10 dashboard as `versions/v2.10/`.
+- Added a compact mobile filter summary bar so phone users see the current year, area, and view without scrolling through all filters.
+- Changed mobile filters into an openable bottom sheet while keeping the full desktop filter layout unchanged.
+- Kept the yearly line chart as a line chart on mobile, but gave it an internal horizontal scroll width so trend labels remain readable.
+- Updated the visible dashboard version badge to V2.11.
 
 - Preserved the accepted V2.9 dashboard as `versions/v2.9/`.
 - Reduced side-specific quick-filter KPI views to two cards so they show only the selected side's count and proportion.

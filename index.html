@@ -18,6 +18,16 @@
     </header>
 
     <section class="filter-band" aria-label="ตัวกรองข้อมูล">
+      <div class="mobile-filter-summary-bar">
+        <div>
+          <span>ตัวกรอง</span>
+          <strong id="mobileFilterSummary">ปี 2568 · ทุกพื้นที่ · ทั้งหมด</strong>
+        </div>
+        <button id="mobileFilterToggle" class="mobile-filter-toggle" type="button" aria-expanded="false" aria-controls="filterPanelContent">
+          ตัวกรอง
+        </button>
+      </div>
+      <div class="filter-panel-content" id="filterPanelContent">
       <div class="filter-grid">
         <label>
           <span>ปีข้อมูล</span>
@@ -54,7 +64,9 @@
         <button id="resetFilters" class="reset-button" type="button"><span aria-hidden="true">↺</span> ล้างตัวกรอง</button>
         <span id="filterCaption"></span>
       </div>
+      </div>
     </section>
+    <button id="mobileFilterBackdrop" class="mobile-filter-backdrop" type="button" aria-label="ปิดตัวกรอง"></button>
 
     <section class="definition-strip" aria-label="นิยามการแปลผล">
       <div>
@@ -241,7 +253,7 @@
     </div>
   </div>
 
-  <div class="version-badge" aria-label="เวอร์ชันแดชบอร์ด">V2.10</div>
+  <div class="version-badge" aria-label="เวอร์ชันแดชบอร์ด">V2.11</div>
 
   <script src="assets/config.js"></script>
   <script src="assets/lpa-data.js"></script>

@@ -16,6 +16,10 @@ const els = {
   type: document.getElementById("typeFilter"),
   search: document.getElementById("searchInput"),
   reset: document.getElementById("resetFilters"),
+  mobileFilterToggle: document.getElementById("mobileFilterToggle"),
+  mobileFilterSummary: document.getElementById("mobileFilterSummary"),
+  mobileFilterBackdrop: document.getElementById("mobileFilterBackdrop"),
+  filterBand: document.querySelector(".filter-band"),
   pageSize: document.getElementById("pageSize"),
   prevPage: document.getElementById("prevPage"),
   nextPage: document.getElementById("nextPage"),
@@ -385,6 +389,25 @@ function scopeLabel() {
   if (state.district) parts.push(state.district);
   if (state.type) parts.push(state.type);
   return parts.length ? parts.join(" · ") : "ภาพรวมประเทศ";
+}
+
+function quickLabel() {
+  const active = quickButtons.find((button) => button.dataset.quick === state.quick);
+  return active ? active.textContent.trim() : "ทั้งหมด";
+}
+
+function updateMobileFilterSummary() {
+  if (!els.mobileFilterSummary) return;
+  const area = state.district || state.province || (state.region ? `เขต ${state.region}` : "ทุกพื้นที่");
+  els.mobileFilterSummary.textContent = `ปี ${state.year} · ${area} · ${quickLabel()}`;
+}
+
+function setMobileFilterOpen(open) {
+  if (!els.filterBand || !els.mobileFilterToggle || !els.mobileFilterBackdrop) return;
+  els.filterBand.classList.toggle("is-mobile-open", open);
+  els.mobileFilterBackdrop.classList.toggle("is-visible", open);
+  els.mobileFilterToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  document.body.classList.toggle("has-mobile-filter-open", open);
 }
 
 function scopedRecordsForYear(year) {
@@ -1128,6 +1151,7 @@ function render() {
   const items = filterRecords();
   const regionItems = filterRecords(["region", "quick"]);
   updateQuickButtons();
+  updateMobileFilterSummary();
   updateChartLegendsV2();
   updateRankMetricAvailability(items);
   updateKpis(items);
@@ -1187,8 +1211,18 @@ quickButtons.forEach((button) => {
     state.page = 1;
     state.rankPage = 1;
     render();
+    if (window.matchMedia("(max-width: 760px)").matches) setMobileFilterOpen(false);
   });
 });
+if (els.mobileFilterToggle) {
+  els.mobileFilterToggle.addEventListener("click", () => {
+    const isOpen = els.filterBand && els.filterBand.classList.contains("is-mobile-open");
+    setMobileFilterOpen(!isOpen);
+  });
+}
+if (els.mobileFilterBackdrop) {
+  els.mobileFilterBackdrop.addEventListener("click", () => setMobileFilterOpen(false));
+}
 els.rankPrev.addEventListener("click", () => {
   state.rankPage = Math.max(1, state.rankPage - 1);
   render();
@@ -1216,6 +1250,7 @@ els.reset.addEventListener("click", () => {
   els.rankMetric.value = "follow";
   els.pageSize.value = "10";
   render();
+  if (window.matchMedia("(max-width: 760px)").matches) setMobileFilterOpen(false);
 });
 
 async function initDashboard() {

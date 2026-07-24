@@ -1,6 +1,12 @@
 # Changelog
 
-## Current: v2.8 live multi-year dashboard
+## Current: v2.9 live multi-year dashboard
+
+- Preserved the pre-context-KPI/mobile-filter dashboard as `versions/v2.9-pre-context-kpi-mobile-filter/`.
+- Reworked KPI cards to change by quick-filter mode so side-specific follow-up views show only the relevant side.
+- Kept the "both sides failed" KPI only in the overall follow-up quick-filter view.
+- Improved portrait/mobile filter density by capping filter height and arranging quick filters in a compact two-column layout.
+- Updated the visible dashboard version badge to V2.9.
 
 - Preserved the pre-KPI-detail/version-badge dashboard as `versions/v2.8-pre-kpi-detail-version-badge/`.
 - Clarified KPI detail text so pass/fail counts identify whether they use all organizations or the school-side denominator.

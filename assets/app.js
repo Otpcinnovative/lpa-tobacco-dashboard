@@ -25,6 +25,14 @@ const els = {
   rankPrev: document.getElementById("rankPrev"),
   rankNext: document.getElementById("rankNext"),
   rankPageInfo: document.getElementById("rankPageInfo"),
+  kpiTotalCard: document.getElementById("kpiTotalCard"),
+  kpi44Card: document.getElementById("kpi44Card"),
+  kpi45Card: document.getElementById("kpi45Card"),
+  kpiWatchCard: document.getElementById("kpiWatchCard"),
+  kpiTotalLabel: document.getElementById("kpiTotalLabel"),
+  kpi44Label: document.getElementById("kpi44Label"),
+  kpi45Label: document.getElementById("kpi45Label"),
+  kpiFollowLabel: document.getElementById("kpiFollowLabel"),
   kpiTotal: document.getElementById("kpiTotal"),
   kpiScope: document.getElementById("kpiScope"),
   kpi44Rate: document.getElementById("kpi44Rate"),
@@ -352,6 +360,23 @@ function summarize(items) {
   };
 }
 
+function followBreakdown(items) {
+  return items.reduce((acc, record) => {
+    const lpaFollow = !isPass(record.st44);
+    const schoolFollow = isSchoolComparable(record) && !isSchoolOk(record);
+    if (lpaFollow) acc.lpa += 1;
+    if (schoolFollow) acc.school += 1;
+    if (lpaFollow && schoolFollow) acc.both += 1;
+    if (lpaFollow && !schoolFollow) acc.lpaOnly += 1;
+    if (!lpaFollow && schoolFollow) acc.schoolOnly += 1;
+    return acc;
+  }, { lpa: 0, school: 0, both: 0, lpaOnly: 0, schoolOnly: 0 });
+}
+
+function schoolFollowBase(summary) {
+  return summary.denominator45 + summary.missing45;
+}
+
 function scopeLabel() {
   const parts = [];
   if (state.region) parts.push(`เขตสุขภาพที่ ${state.region}`);
@@ -418,21 +443,55 @@ function formatUpdatedAt(value) {
   }).format(date);
 }
 
+function setKpiCard(card, label, value, detail, accentClass, visible = true) {
+  card.el.hidden = !visible;
+  if (!visible) return;
+  card.el.classList.remove("kpi-total", "kpi-44", "kpi-45", "kpi-watch");
+  card.el.classList.add(accentClass);
+  card.label.textContent = label;
+  card.value.textContent = value;
+  card.detail.innerHTML = detail;
+}
+
 function updateKpis(items) {
   const s = summarize(items);
   const prev = previousSummary();
   const schoolComparable = hasComparableSchoolData(items);
   const schoolNote = schoolModeNote(items);
-  els.kpiTotal.textContent = fmtInt(s.total);
-  els.kpiScope.innerHTML = `${scopeLabel()}${prev ? countDeltaHtml(s.total, prev.total, prev.year) : ""}`;
-  els.kpi44Rate.textContent = fmtPct(s.rate44);
-  els.kpi44Detail.innerHTML = `${fmtInt(s.pass44)} ผ่าน · ${fmtInt(s.fail44)} ไม่ผ่าน จากทั้งหมด ${fmtInt(s.total)}${prev ? deltaHtml(s.rate44, prev.rate44, prev.year) : ""}`;
-  els.kpi45Rate.textContent = schoolComparable ? fmtPct(s.rate45) : "ไม่มีข้อมูล";
-  els.kpi45Detail.innerHTML = schoolComparable
-    ? `${fmtInt(s.pass45)} ผ่าน · ${fmtInt(s.fail45)} ไม่ผ่าน จากฐานประเมิน ${fmtInt(s.denominator45)} · ตัดฐาน ${fmtInt(s.cut45)} · ไม่มีข้อมูล ${fmtInt(s.missing45)}${prev ? deltaHtml(s.rate45, prev.rate45, prev.year) : ""}${schoolNote ? `<span class="kpi-note">${schoolNote}</span>` : ""}`
-    : schoolNote;
-  els.kpiFollow.textContent = fmtInt(s.follow);
-  els.kpiFollowDetail.innerHTML = `ผ่านภาพรวม ${fmtInt(s.passOverall)} แห่ง${prev ? followDeltaHtml(s.follow, prev.follow, prev.year) : ""}<span class="kpi-note">${overallBasisText(items)}</span>`;
+  const baseItems = filterRecords("quick");
+  const base = summarize(baseItems);
+  const currentBreakdown = followBreakdown(items);
+  const schoolBase = schoolFollowBase(base);
+  const cards = {
+    total: { el: els.kpiTotalCard, label: els.kpiTotalLabel, value: els.kpiTotal, detail: els.kpiScope },
+    lpa: { el: els.kpi44Card, label: els.kpi44Label, value: els.kpi44Rate, detail: els.kpi44Detail },
+    school: { el: els.kpi45Card, label: els.kpi45Label, value: els.kpi45Rate, detail: els.kpi45Detail },
+    watch: { el: els.kpiWatchCard, label: els.kpiFollowLabel, value: els.kpiFollow, detail: els.kpiFollowDetail },
+  };
+
+  if (state.quick === "lpa") {
+    setKpiCard(cards.total, "ต้องติดตามด้าน อปท.", fmtInt(s.total), `${scopeLabel()}`, "kpi-44");
+    setKpiCard(cards.lpa, "สัดส่วนต่อ อปท. ทั้งหมด", fmtPct(base.total ? s.total / base.total : NaN), `${fmtInt(s.total)} จากทั้งหมด ${fmtInt(base.total)} แห่ง`, "kpi-44");
+    setKpiCard(cards.school, "ไม่ผ่านด้าน อปท.", fmtInt(s.fail44), `คะแนนด้าน อปท. ต่ำกว่าเกณฑ์ผ่าน`, "kpi-44");
+    setKpiCard(cards.watch, "", "", "", "kpi-watch", false);
+  } else if (state.quick === "school") {
+    setKpiCard(cards.total, "ต้องติดตามด้านสถานศึกษา", fmtInt(s.total), `${scopeLabel()}`, "kpi-45");
+    setKpiCard(cards.lpa, "สัดส่วนต่อฐานด้านสถานศึกษา", fmtPct(schoolBase ? s.total / schoolBase : NaN), `${fmtInt(s.total)} จากฐานที่ต้องพิจารณา ${fmtInt(schoolBase)} แห่ง`, "kpi-45");
+    setKpiCard(cards.school, "ไม่ผ่านด้านสถานศึกษา", fmtInt(s.fail45), `${fmtInt(s.fail45)} ไม่ผ่าน · ไม่มีข้อมูล ${fmtInt(s.missing45)}`, "kpi-45");
+    setKpiCard(cards.watch, "", "", "", "kpi-watch", false);
+  } else if (state.quick === "follow") {
+    setKpiCard(cards.total, "อปท. ที่ควรติดตามทั้งหมด", fmtInt(s.total), `${scopeLabel()}`, "kpi-watch");
+    setKpiCard(cards.lpa, "ติดตามด้าน อปท.", fmtInt(currentBreakdown.lpa), `${fmtPct(base.total ? currentBreakdown.lpa / base.total : NaN)} ของ อปท. ทั้งหมด ${fmtInt(base.total)} แห่ง`, "kpi-44");
+    setKpiCard(cards.school, "ติดตามด้านสถานศึกษา", fmtInt(currentBreakdown.school), `${fmtPct(schoolBase ? currentBreakdown.school / schoolBase : NaN)} ของฐานด้านสถานศึกษา ${fmtInt(schoolBase)} แห่ง`, "kpi-45");
+    setKpiCard(cards.watch, "ไม่ผ่านทั้งสองด้าน", fmtInt(currentBreakdown.both), `${fmtPct(base.total ? currentBreakdown.both / base.total : NaN)} ของ อปท. ทั้งหมด`, "kpi-watch");
+  } else {
+    setKpiCard(cards.total, "อปท. ในมุมมองนี้", fmtInt(s.total), `${scopeLabel()}${prev ? countDeltaHtml(s.total, prev.total, prev.year) : ""}`, "kpi-total");
+    setKpiCard(cards.lpa, "ด้าน อปท. ควบคุมผลิตภัณฑ์ยาสูบ", fmtPct(s.rate44), `${fmtInt(s.pass44)} ผ่าน · ${fmtInt(s.fail44)} ไม่ผ่าน จากทั้งหมด ${fmtInt(s.total)}${prev ? deltaHtml(s.rate44, prev.rate44, prev.year) : ""}`, "kpi-44");
+    setKpiCard(cards.school, "สถานศึกษาสังกัด อปท. ควบคุมผลิตภัณฑ์ยาสูบ", schoolComparable ? fmtPct(s.rate45) : "ไม่มีข้อมูล", schoolComparable
+      ? `${fmtInt(s.pass45)} ผ่าน · ${fmtInt(s.fail45)} ไม่ผ่าน จากฐานประเมิน ${fmtInt(s.denominator45)} · ตัดฐาน ${fmtInt(s.cut45)} · ไม่มีข้อมูล ${fmtInt(s.missing45)}${prev ? deltaHtml(s.rate45, prev.rate45, prev.year) : ""}${schoolNote ? `<span class="kpi-note">${schoolNote}</span>` : ""}`
+      : schoolNote, "kpi-45");
+    setKpiCard(cards.watch, "อปท. ที่ควรติดตาม", fmtInt(s.follow), `ผ่านภาพรวม ${fmtInt(s.passOverall)} แห่ง${prev ? followDeltaHtml(s.follow, prev.follow, prev.year) : ""}<span class="kpi-note">${overallBasisText(items)}</span>`, "kpi-watch");
+  }
   els.caption.textContent = "";
   if (els.updatedAt) els.updatedAt.textContent = `วันที่อัปเดตข้อมูล: ${formatUpdatedAt(generatedAt)}`;
   if (els.footerDataStatus) els.footerDataStatus.textContent = dataSourceLabel || "เชื่อมข้อมูลสดจาก Google Sheets";

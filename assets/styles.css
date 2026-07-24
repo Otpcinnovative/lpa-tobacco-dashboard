@@ -504,6 +504,10 @@ main > * {
   background: linear-gradient(90deg, var(--yellow), #ffd966);
 }
 
+.swatch-watch {
+  background: linear-gradient(90deg, var(--red), #f07b72);
+}
+
 .vertical-chart {
   display: block;
   min-height: 430px;
@@ -561,6 +565,10 @@ main > * {
   fill: var(--yellow);
 }
 
+.region-bar-watch {
+  fill: var(--red);
+}
+
 .trend-placeholder {
   min-height: 430px;
 }
@@ -593,12 +601,24 @@ main > * {
   stroke-linejoin: round;
 }
 
+.trend-line-watch {
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .trend-dot-44 {
   fill: var(--blue);
 }
 
 .trend-dot-45 {
   fill: var(--yellow);
+}
+
+.trend-dot-watch {
+  fill: var(--red);
 }
 
 .trend-label {
@@ -619,6 +639,18 @@ main > * {
 
 .trend-value-lpa {
   fill: #0d4f96;
+}
+
+.trend-value-44 {
+  fill: #0d4f96;
+}
+
+.trend-value-45 {
+  fill: #8a6400;
+}
+
+.trend-value-watch {
+  fill: #a63832;
 }
 
 .trend-marker {
@@ -1145,7 +1177,7 @@ button:disabled {
 
   .trend-svg {
     height: 320px;
-    min-width: 760px;
+    min-width: 0;
   }
 
   .section-heading {

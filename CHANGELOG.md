@@ -1,6 +1,13 @@
 # Changelog
 
-## Current: v2.9 live multi-year dashboard
+## Current: v2.10 live multi-year dashboard
+
+- Preserved the accepted V2.9 dashboard as `versions/v2.9/`.
+- Reduced side-specific quick-filter KPI views to two cards so they show only the selected side's count and proportion.
+- Reworked the yearly line chart, health-region bar chart, and status donut so quick filters use the same interpretation as the selected KPI view.
+- Changed side-specific chart modes to show the percentage needing follow-up from the relevant denominator instead of mixing pass-rate series from the other side.
+- Improved mobile trend-chart fitting by removing the forced horizontal minimum width.
+- Updated the visible dashboard version badge to V2.10.
 
 - Preserved the pre-context-KPI/mobile-filter dashboard as `versions/v2.9-pre-context-kpi-mobile-filter/`.
 - Reworked KPI cards to change by quick-filter mode so side-specific follow-up views show only the relevant side.

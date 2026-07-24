@@ -294,19 +294,20 @@ function refreshYearOptions() {
 }
 
 function filterRecords(ignoreKey = "", sourceRecords = records) {
+  const ignoreKeys = Array.isArray(ignoreKey) ? ignoreKey : [ignoreKey];
   const query = state.search.trim().toLowerCase();
   return sourceRecords.filter((record) => {
-    if (ignoreKey !== "region" && state.region && String(record.region) !== String(state.region)) return false;
-    if (ignoreKey !== "province" && state.province && record.province !== state.province) return false;
-    if (ignoreKey !== "district" && state.district && record.district !== state.district) return false;
-    if (ignoreKey !== "type" && state.type && record.type !== state.type) return false;
-    if (ignoreKey !== "quick" && state.quick !== "all") {
+    if (!ignoreKeys.includes("region") && state.region && String(record.region) !== String(state.region)) return false;
+    if (!ignoreKeys.includes("province") && state.province && record.province !== state.province) return false;
+    if (!ignoreKeys.includes("district") && state.district && record.district !== state.district) return false;
+    if (!ignoreKeys.includes("type") && state.type && record.type !== state.type) return false;
+    if (!ignoreKeys.includes("quick") && state.quick !== "all") {
       const overall = recordOverall(record);
       if (state.quick === "follow" && overall === "ผ่านตามฐานประเมิน") return false;
       if (state.quick === "school" && overall !== "ต้องติดตามด้านสถานศึกษา" && overall !== "ต้องติดตามทั้งสองด้าน") return false;
       if (state.quick === "lpa" && overall !== "ต้องติดตามด้าน อปท." && overall !== "ต้องติดตามทั้งสองด้าน") return false;
     }
-    if (ignoreKey !== "search" && query) {
+    if (!ignoreKeys.includes("search") && query) {
       const haystack = `${record.name} ${record.district} ${record.province} ${record.type}`.toLowerCase();
       if (!haystack.includes(query)) return false;
     }
@@ -472,12 +473,12 @@ function updateKpis(items) {
   if (state.quick === "lpa") {
     setKpiCard(cards.total, "ต้องติดตามด้าน อปท.", fmtInt(s.total), `${scopeLabel()}`, "kpi-44");
     setKpiCard(cards.lpa, "สัดส่วนต่อ อปท. ทั้งหมด", fmtPct(base.total ? s.total / base.total : NaN), `${fmtInt(s.total)} จากทั้งหมด ${fmtInt(base.total)} แห่ง`, "kpi-44");
-    setKpiCard(cards.school, "ไม่ผ่านด้าน อปท.", fmtInt(s.fail44), `คะแนนด้าน อปท. ต่ำกว่าเกณฑ์ผ่าน`, "kpi-44");
+    setKpiCard(cards.school, "", "", "", "kpi-45", false);
     setKpiCard(cards.watch, "", "", "", "kpi-watch", false);
   } else if (state.quick === "school") {
     setKpiCard(cards.total, "ต้องติดตามด้านสถานศึกษา", fmtInt(s.total), `${scopeLabel()}`, "kpi-45");
     setKpiCard(cards.lpa, "สัดส่วนต่อฐานด้านสถานศึกษา", fmtPct(schoolBase ? s.total / schoolBase : NaN), `${fmtInt(s.total)} จากฐานที่ต้องพิจารณา ${fmtInt(schoolBase)} แห่ง`, "kpi-45");
-    setKpiCard(cards.school, "ไม่ผ่านด้านสถานศึกษา", fmtInt(s.fail45), `${fmtInt(s.fail45)} ไม่ผ่าน · ไม่มีข้อมูล ${fmtInt(s.missing45)}`, "kpi-45");
+    setKpiCard(cards.school, "", "", "", "kpi-45", false);
     setKpiCard(cards.watch, "", "", "", "kpi-watch", false);
   } else if (state.quick === "follow") {
     setKpiCard(cards.total, "อปท. ที่ควรติดตามทั้งหมด", fmtInt(s.total), `${scopeLabel()}`, "kpi-watch");
@@ -548,9 +549,9 @@ function yearContextMessage(items) {
   const year = Number(state.year);
   const messages = [];
   if (state.quick === "lpa") {
-    messages.push("กำลังแสดงเฉพาะ อปท. ที่ต้องติดตามด้าน อปท. ค่า KPI ด้าน อปท. จึงสะท้อนผลของกลุ่มที่ยังไม่ผ่านด้านนี้");
+    messages.push("กำลังแสดงเฉพาะ อปท. ที่ต้องติดตามด้าน อปท. โดยเทียบสัดส่วนกับ อปท. ทั้งหมดในเงื่อนไขเดียวกัน");
   } else if (state.quick === "school") {
-    messages.push("กำลังแสดงเฉพาะ อปท. ที่ต้องติดตามด้านสถานศึกษา ค่า KPI ด้านสถานศึกษาจึงสะท้อนผลของกลุ่มที่ยังไม่ผ่านด้านนี้");
+    messages.push("กำลังแสดงเฉพาะ อปท. ที่ต้องติดตามด้านสถานศึกษา โดยเทียบสัดส่วนกับฐานด้านสถานศึกษาในเงื่อนไขเดียวกัน");
   } else if (state.quick === "follow") {
     messages.push("กำลังแสดงเฉพาะ อปท. ที่ควรติดตามอย่างน้อย 1 ด้าน");
   }
@@ -805,6 +806,223 @@ function updateStatusChart(items) {
   `;
 }
 
+function activeMetricSeries() {
+  if (state.quick === "lpa") {
+    return [{ key: "44", label: "ติดตามด้าน อปท.", color: "var(--blue)" }];
+  }
+  if (state.quick === "school") {
+    return [{ key: "45", label: "ติดตามด้านสถานศึกษา", color: "var(--yellow)" }];
+  }
+  if (state.quick === "follow") {
+    return [{ key: "watch", label: "อปท. ที่ควรติดตาม", color: "var(--red)" }];
+  }
+  return [
+    { key: "44", label: "ด้าน อปท.", color: "var(--blue)" },
+    { key: "45", label: "ด้านสถานศึกษา", color: "var(--yellow)" },
+  ];
+}
+
+function metricRate(rows, key) {
+  const s = summarize(rows);
+  const breakdown = followBreakdown(rows);
+  if (key === "44" && state.quick === "lpa") return s.total ? breakdown.lpa / s.total : NaN;
+  if (key === "45" && state.quick === "school") {
+    const base = schoolFollowBase(s);
+    return base ? breakdown.school / base : NaN;
+  }
+  if (key === "watch") return s.total ? s.follow / s.total : NaN;
+  if (key === "44") return s.rate44;
+  if (key === "45") return s.rate45;
+  return NaN;
+}
+
+function updateChartLegendsV2() {
+  const series = activeMetricSeries();
+  document.querySelectorAll(".chart-legend").forEach((legend) => {
+    legend.innerHTML = series.map((item) => `
+      <span><i class="legend-swatch swatch-${item.key}"></i>${item.label}</span>
+    `).join("");
+  });
+}
+
+function updateRegionChartV2(items) {
+  const grouped = groupBy(items, "region")
+    .filter(([region]) => region !== "ไม่ระบุ")
+    .sort((a, b) => Number(a[0]) - Number(b[0]));
+
+  if (!grouped.length) {
+    els.regionChart.innerHTML = `<p class="empty">ไม่มีข้อมูลในเงื่อนไขนี้</p>`;
+    return;
+  }
+
+  const series = activeMetricSeries();
+  const width = 1320;
+  const height = 460;
+  const margin = { top: 58, right: 36, bottom: 66, left: 72 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const groupW = plotW / grouped.length;
+  const barGap = 8;
+  const barW = Math.min(44, (groupW - barGap * (series.length + 1)) / Math.max(1, series.length));
+  const y = (rate) => margin.top + plotH - Math.max(0, Math.min(1, rate || 0)) * plotH;
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const barPath = (x, topY, w, h, radius = 6) => {
+    const r = Math.min(radius, w / 2, h);
+    const bottomY = topY + h;
+    return `M${x},${bottomY} L${x},${topY + r} Q${x},${topY} ${x + r},${topY} L${x + w - r},${topY} Q${x + w},${topY} ${x + w},${topY + r} L${x + w},${bottomY} Z`;
+  };
+
+  const grid = ticks.map((tick) => {
+    const yy = y(tick);
+    return `
+      <line class="grid-line" x1="${margin.left}" y1="${yy}" x2="${width - margin.right}" y2="${yy}"></line>
+      <text class="axis-text" x="${margin.left - 10}" y="${yy + 4}" text-anchor="end">${Math.round(tick * 100)}</text>
+    `;
+  }).join("");
+
+  const bars = grouped.map(([region, rows], index) => {
+    const selected = state.region && String(region) === String(state.region);
+    const muted = state.region && !selected;
+    const xCenter = margin.left + index * groupW + groupW / 2;
+    const totalBarW = series.length * barW + (series.length - 1) * barGap;
+    return `
+      ${selected ? `<rect class="region-highlight" x="${xCenter - groupW / 2 + 8}" y="${margin.top - 18}" width="${groupW - 16}" height="${plotH + 34}" rx="8"></rect>` : ""}
+      ${series.map((item, seriesIndex) => {
+        const rate = metricRate(rows, item.key);
+        if (!Number.isFinite(rate)) return "";
+        const xPos = xCenter - totalBarW / 2 + seriesIndex * (barW + barGap);
+        const yPos = y(rate);
+        const h = margin.top + plotH - yPos;
+        const labelY = Math.max(16, yPos - 8);
+        return `
+          <path class="region-bar-${item.key} ${muted ? "is-muted" : ""}" d="${barPath(xPos, yPos, barW, h)}"></path>
+          <text class="bar-value-label ${muted ? "is-muted" : ""}" x="${xPos + barW / 2}" y="${labelY}" text-anchor="middle">${fmtRateNumber(rate)}</text>
+        `;
+      }).join("")}
+      <text class="axis-text ${selected ? "is-selected" : ""}" x="${xCenter}" y="${height - 20}" text-anchor="middle">${region}</text>
+    `;
+  }).join("");
+
+  els.regionChart.innerHTML = `
+    <svg class="region-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟแท่งร้อยละตามเขตสุขภาพ">
+      ${grid}
+      <line class="axis-line" x1="${margin.left}" y1="${margin.top + plotH}" x2="${width - margin.right}" y2="${margin.top + plotH}"></line>
+      <line class="axis-line" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}"></line>
+      ${bars}
+      <text class="axis-text" x="22" y="${margin.top + plotH / 2}" text-anchor="middle" transform="rotate(-90 22 ${margin.top + plotH / 2})">ร้อยละ</text>
+      <text class="axis-text" x="${margin.left + plotW / 2}" y="${height - 2}" text-anchor="middle">เขตสุขภาพ</text>
+    </svg>
+  `;
+}
+
+function updateTrendChartV2(items) {
+  const cachedYears = availableYears.filter((year) => recordsByYear.has(Number(year))).sort((a, b) => Number(a) - Number(b));
+  const summaries = cachedYears.length
+    ? cachedYears.map((year) => ({ year, rows: filterRecords("quick", recordsByYear.get(Number(year))) }))
+    : [{ year: state.year, rows: items }];
+  const series = activeMetricSeries();
+  const width = 1320;
+  const height = 470;
+  const margin = { top: 70, right: 88, bottom: 60, left: 76 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const years = summaries.map((row) => Number(row.year));
+  const x = (index) => margin.left + (summaries.length === 1 ? plotW / 2 : index * (plotW / (summaries.length - 1)));
+  const y = (rate) => margin.top + plotH - Math.max(0, Math.min(1, rate || 0)) * plotH;
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const pilotIndex = years.findIndex((year) => Number(year) === 2567);
+  const pilotX = pilotIndex >= 0 ? x(pilotIndex) : null;
+  const allPoints = series.map((item) => ({
+    ...item,
+    points: summaries.map((row, index) => {
+      const rate = metricRate(row.rows, item.key);
+      return { x: x(index), y: y(rate), rate, year: row.year };
+    }).filter((point) => Number.isFinite(point.rate)),
+  }));
+  const path = (points) => points.map((p, i) => `${i ? "L" : "M"}${p.x},${p.y}`).join(" ");
+  const valueLabel = (point, item, pointIndex) => {
+    const xShift = pointIndex === 0 ? 18 : pointIndex === summaries.length - 1 ? -18 : 0;
+    const yShift = item.key === "45" ? 24 : -14;
+    return `<text class="trend-value trend-value-${item.key}" x="${point.x + xShift}" y="${point.y + yShift}" text-anchor="middle">${fmtRateNumber(point.rate)}</text>`;
+  };
+
+  els.trendChart.innerHTML = `
+    <svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟเส้นเทียบรายปี">
+      ${ticks.map((tick) => {
+        const yy = y(tick);
+        return `
+          <line class="trend-grid" x1="${margin.left}" y1="${yy}" x2="${width - margin.right}" y2="${yy}"></line>
+          <text class="trend-label" x="${margin.left - 8}" y="${yy + 4}" text-anchor="end">${Math.round(tick * 100)}</text>
+        `;
+      }).join("")}
+      <line class="trend-axis" x1="${margin.left}" y1="${margin.top + plotH}" x2="${width - margin.right}" y2="${margin.top + plotH}"></line>
+      <line class="trend-axis" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}"></line>
+      ${pilotX !== null ? `<line class="trend-marker" x1="${pilotX}" y1="${margin.top}" x2="${pilotX}" y2="${margin.top + plotH}"></line><text class="trend-marker-label" x="${pilotX + 12}" y="${margin.top + 22}">เริ่มข้อมูลสถานศึกษานำร่อง</text>` : ""}
+      ${allPoints.map((item) => item.points.length > 1 ? `<path class="trend-line-${item.key}" d="${path(item.points)}"></path>` : "").join("")}
+      ${allPoints.map((item) => item.points.map((point, index) => `<circle class="trend-dot-${item.key}" cx="${point.x}" cy="${point.y}" r="6"></circle>${valueLabel(point, item, index)}`).join("")).join("")}
+      ${years.map((year, index) => `<text class="trend-label" x="${x(index)}" y="${height - 12}" text-anchor="middle">${year}</text>`).join("")}
+      <text class="trend-label" x="${margin.left + 6}" y="30">ร้อยละ</text>
+      <text class="trend-label" x="${width - margin.right}" y="30" text-anchor="end">${state.quick === "all" ? "ร้อยละผ่านรายปี" : "ร้อยละที่ต้องติดตามรายปี"}</text>
+    </svg>
+  `;
+}
+
+function updateStatusChartV2(items) {
+  const baseItems = state.quick === "all" || state.quick === "follow" ? items : filterRecords("quick");
+  let chartItems;
+  if (state.quick === "lpa") {
+    const s = summarize(baseItems);
+    chartItems = [
+      { label: "ผ่านด้าน อปท.", count: s.pass44, color: "var(--green)" },
+      { label: "ต้องติดตามด้าน อปท.", count: s.fail44, color: "var(--blue)" },
+    ];
+  } else if (state.quick === "school") {
+    const s = summarize(baseItems);
+    chartItems = [
+      { label: "ผ่านด้านสถานศึกษา", count: s.pass45, color: "var(--green)" },
+      { label: "ต้องติดตามด้านสถานศึกษา", count: s.fail45 + s.missing45, color: "var(--yellow)" },
+    ];
+  } else if (state.quick === "follow") {
+    const breakdown = followBreakdown(items);
+    chartItems = [
+      { label: "ติดตามด้าน อปท. เท่านั้น", count: breakdown.lpaOnly, color: "var(--blue)" },
+      { label: "ติดตามด้านสถานศึกษาเท่านั้น", count: breakdown.schoolOnly, color: "var(--yellow)" },
+      { label: "ติดตามทั้งสองด้าน", count: breakdown.both, color: "var(--red)" },
+    ];
+  } else {
+    const counts = Object.fromEntries(statusOrder.map((status) => [status, 0]));
+    items.forEach((item) => {
+      const overall = recordOverall(item);
+      counts[overall] = (counts[overall] || 0) + 1;
+    });
+    chartItems = statusOrder.map((status) => ({ label: status, count: counts[status], color: statusColors[status] }));
+  }
+
+  const total = chartItems.reduce((sum, item) => sum + item.count, 0) || 1;
+  let angle = 0;
+  const stops = chartItems.map((item) => {
+    const start = angle;
+    const size = item.count / total * 360;
+    angle += size;
+    return `${item.color} ${start}deg ${angle}deg`;
+  }).join(", ");
+  const legend = chartItems.map((item) => `
+    <div class="legend-item">
+      <span class="legend-dot" style="background:${item.color}"></span>
+      <span>${item.label}</span>
+      <strong>${fmtInt(item.count)}</strong>
+      <strong class="legend-percent">${fmtPct(item.count / total)}</strong>
+    </div>
+  `).join("");
+
+  els.statusChart.innerHTML = `
+    <div class="donut-wrap">
+      <div class="donut" style="background:conic-gradient(${stops})" role="img" aria-label="สัดส่วนสถานะรวม"></div>
+      <div class="legend-list">${legend}</div>
+    </div>
+  `;
+}
+
 function updateDistrictSummary(items) {
   if (!state.province) {
     els.districtPanel.style.display = "none";
@@ -908,15 +1126,16 @@ function updateTable(items) {
 function render() {
   refreshFilterOptions();
   const items = filterRecords();
-  const regionItems = filterRecords("region");
+  const regionItems = filterRecords(["region", "quick"]);
   updateQuickButtons();
+  updateChartLegendsV2();
   updateRankMetricAvailability(items);
   updateKpis(items);
   updateYearContext(items);
-  updateRegionChart(regionItems);
-  updateTrendChart(items);
+  updateRegionChartV2(regionItems);
+  updateTrendChartV2(items);
   updateProvinceRanking(items);
-  updateStatusChart(items);
+  updateStatusChartV2(items);
   updateDistrictSummary(items);
   updateTable(items);
 }

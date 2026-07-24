@@ -426,10 +426,10 @@ function updateKpis(items) {
   els.kpiTotal.textContent = fmtInt(s.total);
   els.kpiScope.innerHTML = `${scopeLabel()}${prev ? countDeltaHtml(s.total, prev.total, prev.year) : ""}`;
   els.kpi44Rate.textContent = fmtPct(s.rate44);
-  els.kpi44Detail.innerHTML = `${fmtInt(s.pass44)} ผ่าน · ${fmtInt(s.fail44)} ไม่ผ่าน${prev ? deltaHtml(s.rate44, prev.rate44, prev.year) : ""}`;
+  els.kpi44Detail.innerHTML = `${fmtInt(s.pass44)} ผ่าน · ${fmtInt(s.fail44)} ไม่ผ่าน จากทั้งหมด ${fmtInt(s.total)}${prev ? deltaHtml(s.rate44, prev.rate44, prev.year) : ""}`;
   els.kpi45Rate.textContent = schoolComparable ? fmtPct(s.rate45) : "ไม่มีข้อมูล";
   els.kpi45Detail.innerHTML = schoolComparable
-    ? `${fmtInt(s.pass45)} ผ่าน จากฐาน ${fmtInt(s.denominator45)} · ตัดฐาน ${fmtInt(s.cut45)}${prev ? deltaHtml(s.rate45, prev.rate45, prev.year) : ""}${schoolNote ? `<span class="kpi-note">${schoolNote}</span>` : ""}`
+    ? `${fmtInt(s.pass45)} ผ่าน · ${fmtInt(s.fail45)} ไม่ผ่าน จากฐานประเมิน ${fmtInt(s.denominator45)} · ตัดฐาน ${fmtInt(s.cut45)} · ไม่มีข้อมูล ${fmtInt(s.missing45)}${prev ? deltaHtml(s.rate45, prev.rate45, prev.year) : ""}${schoolNote ? `<span class="kpi-note">${schoolNote}</span>` : ""}`
     : schoolNote;
   els.kpiFollow.textContent = fmtInt(s.follow);
   els.kpiFollowDetail.innerHTML = `ผ่านภาพรวม ${fmtInt(s.passOverall)} แห่ง${prev ? followDeltaHtml(s.follow, prev.follow, prev.year) : ""}<span class="kpi-note">${overallBasisText(items)}</span>`;

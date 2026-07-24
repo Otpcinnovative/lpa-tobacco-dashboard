@@ -1,6 +1,11 @@
 # Changelog
 
-## Current: v2.7 live multi-year dashboard
+## Current: v2.8 live multi-year dashboard
+
+- Preserved the pre-KPI-detail/version-badge dashboard as `versions/v2.8-pre-kpi-detail-version-badge/`.
+- Clarified KPI detail text so pass/fail counts identify whether they use all organizations or the school-side denominator.
+- Added school-side missing-data counts to the KPI card alongside pass, fail, denominator, and cut-base counts.
+- Added a small fixed version badge at the bottom-right of the dashboard.
 
 - Preserved the pre-quick-filter-clarity dashboard as `versions/v2.7-pre-quick-filter-clarity/`.
 - Renamed the quick filters from broad side labels to follow-up labels so users understand they filter problem groups, not switch KPI modes.

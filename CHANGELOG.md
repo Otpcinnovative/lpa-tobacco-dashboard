@@ -1,6 +1,12 @@
 # Changelog
 
-## Current: v2.11 live multi-year dashboard
+## Current: v2.12 live multi-year dashboard
+
+- Preserved the accepted V2.11 dashboard as `versions/v2.11/`.
+- Kept the loading overlay visible on initial page load until yearly trend data has finished preloading.
+- Prevented the yearly line chart from briefly appearing with only the selected year before the remaining years load.
+- Added a preload timeout so the dashboard does not remain stuck on the loading overlay if one yearly request is delayed too long.
+- Updated the visible dashboard version badge to V2.12.
 
 - Preserved the accepted V2.10 dashboard as `versions/v2.10/`.
 - Added a compact mobile filter summary bar so phone users see the current year, area, and view without scrolling through all filters.

@@ -119,7 +119,12 @@ function loadJsonp(url) {
   return new Promise((resolve, reject) => {
     const callbackName = `lpaJsonp_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
     const script = document.createElement("script");
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("JSONP load timed out"));
+    }, 12000);
     const cleanup = () => {
+      window.clearTimeout(timeout);
       delete window[callbackName];
       script.remove();
     };
@@ -213,8 +218,17 @@ async function loadYearForTrend(year) {
 
 async function preloadTrendYears() {
   if (!availableYears.length) return;
-  await Promise.all(availableYears.map((year) => loadYearForTrend(year)));
+  const preloadWithLimit = (year) => Promise.race([
+    loadYearForTrend(year),
+    new Promise((resolve) => window.setTimeout(() => resolve(false), 12000)),
+  ]);
+  await Promise.all(availableYears.map((year) => preloadWithLimit(year)));
   render();
+}
+
+async function renderWithTrendReady() {
+  render();
+  await preloadTrendYears();
 }
 
 function fmtInt(value) {
@@ -1189,7 +1203,6 @@ if (els.year) {
     if (recordsByYear.has(selectedYear) && liveCachedYears.has(selectedYear)) {
       await loadLiveRecords(selectedYear);
       render();
-      preloadTrendYears();
       return;
     }
     setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
@@ -1197,8 +1210,7 @@ if (els.year) {
       dataSourceMode = "loading";
       dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${selectedYear}`;
       await loadLiveRecords(selectedYear);
-      render();
-      preloadTrendYears();
+      await renderWithTrendReady();
     } finally {
       setLoading(false);
     }
@@ -1260,8 +1272,7 @@ async function initDashboard() {
     if (liveLoaded) {
       state.page = 1;
       state.rankPage = 1;
-      render();
-      preloadTrendYears();
+      await renderWithTrendReady();
     } else {
       render();
     }

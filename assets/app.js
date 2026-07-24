@@ -802,12 +802,12 @@ function updateProvinceRanking(items) {
     const pct = metricValue(s);
     const label = view === "best"
       ? metric === "overall"
-        ? `ผ่านภาพรวม ${fmtPct(s.rateOverall)} · ควรสนับสนุน ${fmtInt(s.follow)}`
+        ? `ผ่านภาพรวม ${fmtPct(s.rateOverall)} · ควรติดตาม ${fmtInt(s.follow)}`
         : metric === "rate44"
           ? `ผ่านด้าน อปท. ${fmtPct(s.rate44)} · ไม่ผ่าน ${fmtInt(s.fail44)}`
           : `ผ่านด้านสถานศึกษา ${fmtPct(s.rate45)} · ไม่ผ่าน ${fmtInt(s.fail45)}`
       : metric === "overall"
-        ? `ควรสนับสนุน ${fmtInt(s.follow)} แห่ง (${fmtPct(pct)}) จาก ${fmtInt(s.total)} อปท.`
+        ? `ควรติดตาม ${fmtInt(s.follow)} แห่ง (${fmtPct(pct)}) จาก ${fmtInt(s.total)} อปท.`
         : metric === "rate44"
           ? `ผ่านด้าน อปท. ${fmtPct(s.rate44)} · ไม่ผ่าน ${fmtInt(s.fail44)}`
           : `ผ่านด้านสถานศึกษา ${fmtPct(s.rate45)} · ไม่ผ่าน ${fmtInt(s.fail45)}`;

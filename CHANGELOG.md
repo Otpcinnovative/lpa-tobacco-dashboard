@@ -1,6 +1,12 @@
 # Changelog
 
-## Current: v2.13 live multi-year dashboard
+## Current: v2.14 live multi-year dashboard
+
+- Preserved the accepted V2.13 dashboard as `versions/v2.13/`.
+- Renamed the province ranking views to "พื้นที่ที่ควรติดตาม" and "พื้นที่ที่ดำเนินการได้ดี".
+- Changed province ranking detail text from "ควรสนับสนุน" to "ควรติดตาม".
+- Stacked the province ranking controls on desktop so the view selector appears above the indicator selector, matching the mobile layout.
+- Updated the visible dashboard version badge to V2.14.
 
 - Preserved the accepted V2.12 dashboard as `versions/v2.12/`.
 - Renamed the province ranking panel to "ผลการดำเนินงาน อปท. ด้านการควบคุมผลิตภัณฑ์ยาสูบรายจังหวัด".

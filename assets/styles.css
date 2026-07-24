@@ -708,9 +708,9 @@ main > * {
 
 .rank-controls {
   display: grid;
-  grid-template-columns: repeat(2, minmax(190px, 1fr));
+  grid-template-columns: minmax(220px, 1fr);
   gap: 10px;
-  min-width: min(100%, 440px);
+  min-width: min(100%, 260px);
 }
 
 .rank-item {

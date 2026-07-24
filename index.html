@@ -157,16 +157,25 @@
         <article class="panel">
           <div class="section-heading">
             <div>
-              <h2>จังหวัดที่ไม่ผ่านหรือควรติดตามมากสุด</h2>
+              <h2>ผลการดำเนินงาน อปท. ด้านการควบคุมผลิตภัณฑ์ยาสูบรายจังหวัด</h2>
             </div>
-            <label class="inline-control">
-              <span>ตัวชี้วัด</span>
-              <select id="rankMetric" aria-label="ตัวชี้วัด">
-                <option value="follow">ควรติดตามมากสุด</option>
-                <option value="rate44">ด้าน อปท. ต่ำสุด</option>
-                <option value="rate45">ด้านสถานศึกษาต่ำสุด</option>
-              </select>
-            </label>
+            <div class="rank-controls">
+              <label class="inline-control">
+                <span>มุมมองผลการดำเนินงาน</span>
+                <select id="rankView" aria-label="มุมมองผลการดำเนินงาน">
+                  <option value="support">พื้นที่ที่ควรสนับสนุน</option>
+                  <option value="best">พื้นที่ที่ดำเนินงานเด่น</option>
+                </select>
+              </label>
+              <label class="inline-control">
+                <span>ตัวชี้วัด</span>
+                <select id="rankMetric" aria-label="ตัวชี้วัด">
+                  <option value="overall">ภาพรวม</option>
+                  <option value="rate44">ด้าน อปท.</option>
+                  <option value="rate45">ด้านสถานศึกษา</option>
+                </select>
+              </label>
+            </div>
           </div>
           <div id="provinceRanking" class="ranking-list"></div>
           <div class="ranking-pagination" aria-label="การแบ่งหน้าจังหวัดที่ควรติดตาม">
@@ -253,7 +262,7 @@
     </div>
   </div>
 
-  <div class="version-badge" aria-label="เวอร์ชันแดชบอร์ด">V2.12</div>
+  <div class="version-badge" aria-label="เวอร์ชันแดชบอร์ด">V2.13</div>
 
   <script src="assets/config.js"></script>
   <script src="assets/lpa-data.js"></script>

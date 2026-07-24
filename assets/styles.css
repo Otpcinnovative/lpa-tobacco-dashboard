@@ -706,6 +706,13 @@ main > * {
   line-height: 1.65;
 }
 
+.rank-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(190px, 1fr));
+  gap: 10px;
+  min-width: min(100%, 440px);
+}
+
 .rank-item {
   display: grid;
   grid-template-columns: 40px minmax(160px, 1fr) minmax(260px, 48%);
@@ -748,6 +755,15 @@ main > * {
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--amber), var(--red));
+}
+
+.rank-positive .mini-fill {
+  background: linear-gradient(90deg, var(--teal), var(--green));
+}
+
+.rank-positive .rank-no {
+  background: var(--green-soft);
+  color: #177355;
 }
 
 .rank-value {
@@ -1261,6 +1277,11 @@ button:disabled {
 
   .section-heading {
     flex-direction: column;
+  }
+
+  .rank-controls {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .rank-item {

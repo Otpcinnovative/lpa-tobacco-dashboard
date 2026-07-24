@@ -1,6 +1,13 @@
 # Changelog
 
-## Current: v2.12 live multi-year dashboard
+## Current: v2.13 live multi-year dashboard
+
+- Preserved the accepted V2.12 dashboard as `versions/v2.12/`.
+- Renamed the province ranking panel to "ผลการดำเนินงาน อปท. ด้านการควบคุมผลิตภัณฑ์ยาสูบรายจังหวัด".
+- Added a province ranking view selector for "พื้นที่ที่ควรสนับสนุน" and "พื้นที่ที่ดำเนินงานเด่น".
+- Simplified ranking indicators to "ภาพรวม", "ด้าน อปท.", and "ด้านสถานศึกษา".
+- Changed positive ranking bars to green/teal while keeping support-oriented rankings in amber/red.
+- Updated the visible dashboard version badge to V2.13.
 
 - Preserved the accepted V2.11 dashboard as `versions/v2.11/`.
 - Kept the loading overlay visible on initial page load until yearly trend data has finished preloading.

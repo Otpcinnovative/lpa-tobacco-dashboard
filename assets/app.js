@@ -25,6 +25,7 @@ const els = {
   nextPage: document.getElementById("nextPage"),
   pageInfo: document.getElementById("pageInfo"),
   caption: document.getElementById("filterCaption"),
+  rankView: document.getElementById("rankView"),
   rankMetric: document.getElementById("rankMetric"),
   rankPrev: document.getElementById("rankPrev"),
   rankNext: document.getElementById("rankNext"),
@@ -85,7 +86,8 @@ const state = {
   district: "",
   type: "",
   search: "",
-  rankMetric: "follow",
+  rankView: "support",
+  rankMetric: "overall",
   rankPage: 1,
   rankPageSize: 5,
   quick: "all",
@@ -547,8 +549,8 @@ function updateRankMetricAvailability(items) {
   const schoolAvailable = hasComparableSchoolData(items);
   if (schoolOption) schoolOption.disabled = !schoolAvailable;
   if (!schoolAvailable && state.rankMetric === "rate45") {
-    state.rankMetric = "follow";
-    els.rankMetric.value = "follow";
+    state.rankMetric = "overall";
+    els.rankMetric.value = "overall";
   }
 }
 
@@ -766,15 +768,24 @@ function provinceStats(items) {
 
 function updateProvinceRanking(items) {
   const metric = state.rankMetric;
+  const view = state.rankView;
   let stats = provinceStats(items).filter((s) => s.total > 0);
-  if (metric === "follow") {
-    stats = stats.sort((a, b) => b.follow - a.follow || b.total - a.total);
+  const metricValue = (s) => {
+    if (metric === "rate44") return s.rate44;
+    if (metric === "rate45") return s.rate45;
+    return view === "best" ? s.rateOverall : s.total ? s.follow / s.total : NaN;
+  };
+  if (metric === "rate45") {
+    stats = stats.filter((s) => Number.isFinite(s.rate45));
+  }
+  if (view === "best") {
+    stats = stats.sort((a, b) => metricValue(b) - metricValue(a) || b.total - a.total);
+  } else if (metric === "overall") {
+    stats = stats.sort((a, b) => b.follow - a.follow || metricValue(b) - metricValue(a) || b.total - a.total);
   } else if (metric === "rate44") {
     stats = stats.sort((a, b) => a.rate44 - b.rate44 || b.total - a.total);
   } else if (metric === "rate45") {
-    stats = stats
-      .filter((s) => Number.isFinite(s.rate45))
-      .sort((a, b) => a.rate45 - b.rate45 || b.total - a.total);
+    stats = stats.sort((a, b) => a.rate45 - b.rate45 || b.total - a.total);
   } else {
     stats = stats.sort((a, b) => b.follow - a.follow || b.total - a.total);
   }
@@ -788,17 +799,20 @@ function updateProvinceRanking(items) {
   els.rankNext.disabled = state.rankPage >= totalPages;
 
   els.provinceRanking.innerHTML = shown.map((s, index) => {
-    const value = metric === "follow" ? s.follow : metric === "rate44" ? s.rate44 : s.rate45;
-    const pct = metric === "follow" ? (s.total ? value / s.total : 0) : value;
-    const label = metric === "follow"
-      ? `${fmtInt(s.follow)} แห่ง (${fmtPct(pct)}) จาก ${fmtInt(s.total)} อปท.`
-      : metric === "rate44"
-        ? `ผ่านด้าน อปท. ${fmtPct(s.rate44)} · ไม่ผ่าน ${fmtInt(s.fail44)}`
-        : metric === "rate45"
-          ? `ผ่านด้านสถานศึกษา ${fmtPct(s.rate45)} · ไม่ผ่าน ${fmtInt(s.fail45)}`
-          : `${fmtInt(s.follow)} แห่ง (${fmtPct(pct)}) จาก ${fmtInt(s.total)} อปท.`;
+    const pct = metricValue(s);
+    const label = view === "best"
+      ? metric === "overall"
+        ? `ผ่านภาพรวม ${fmtPct(s.rateOverall)} · ควรสนับสนุน ${fmtInt(s.follow)}`
+        : metric === "rate44"
+          ? `ผ่านด้าน อปท. ${fmtPct(s.rate44)} · ไม่ผ่าน ${fmtInt(s.fail44)}`
+          : `ผ่านด้านสถานศึกษา ${fmtPct(s.rate45)} · ไม่ผ่าน ${fmtInt(s.fail45)}`
+      : metric === "overall"
+        ? `ควรสนับสนุน ${fmtInt(s.follow)} แห่ง (${fmtPct(pct)}) จาก ${fmtInt(s.total)} อปท.`
+        : metric === "rate44"
+          ? `ผ่านด้าน อปท. ${fmtPct(s.rate44)} · ไม่ผ่าน ${fmtInt(s.fail44)}`
+          : `ผ่านด้านสถานศึกษา ${fmtPct(s.rate45)} · ไม่ผ่าน ${fmtInt(s.fail45)}`;
     return `
-      <div class="rank-item">
+      <div class="rank-item ${view === "best" ? "rank-positive" : "rank-support"}">
         <span class="rank-no">${start + index + 1}</span>
         <div class="rank-title"><strong>${s.province}</strong><span>${fmtInt(s.total)} อปท.</span></div>
         <div class="rank-visual">
@@ -1184,21 +1198,23 @@ function updateStateFromControls() {
   state.district = els.district.value;
   state.type = els.type.value;
   state.search = els.search.value;
+  state.rankView = els.rankView ? els.rankView.value : "support";
   state.rankMetric = els.rankMetric.value;
   state.page = 1;
   state.rankPage = 1;
   render();
 }
 
-[els.region, els.province, els.district, els.type, els.rankMetric].forEach((el) => {
+[els.region, els.province, els.district, els.type, els.rankView, els.rankMetric].filter(Boolean).forEach((el) => {
   el.addEventListener("change", updateStateFromControls);
 });
 if (els.year) {
   els.year.addEventListener("change", async () => {
     const selectedYear = Number(els.year.value);
-    Object.assign(state, { year: selectedYear, region: "", province: "", district: "", type: "", search: "", rankMetric: "follow", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
+    Object.assign(state, { year: selectedYear, region: "", province: "", district: "", type: "", search: "", rankView: "support", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
     els.search.value = "";
-    els.rankMetric.value = "follow";
+    if (els.rankView) els.rankView.value = "support";
+    els.rankMetric.value = "overall";
     els.pageSize.value = "10";
     if (recordsByYear.has(selectedYear) && liveCachedYears.has(selectedYear)) {
       await loadLiveRecords(selectedYear);
@@ -1257,9 +1273,10 @@ els.nextPage.addEventListener("click", () => {
   render();
 });
 els.reset.addEventListener("click", () => {
-  Object.assign(state, { region: "", province: "", district: "", type: "", search: "", rankMetric: "follow", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
+  Object.assign(state, { region: "", province: "", district: "", type: "", search: "", rankView: "support", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
   els.search.value = "";
-  els.rankMetric.value = "follow";
+  if (els.rankView) els.rankView.value = "support";
+  els.rankMetric.value = "overall";
   els.pageSize.value = "10";
   render();
   if (window.matchMedia("(max-width: 760px)").matches) setMobileFilterOpen(false);

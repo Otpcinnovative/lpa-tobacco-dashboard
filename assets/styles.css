@@ -50,46 +50,35 @@ select {
 
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 32px;
-  padding: 46px 0 34px;
-}
-
-.brand-title-line {
-  display: flex;
-  align-items: baseline;
-  gap: 18px;
-  flex-wrap: wrap;
-}
-
-.brand-title-line h1 {
-  font-size: clamp(5rem, 10vw, 9rem);
-  line-height: 0.9;
-  font-weight: 700;
-}
-
-.brand-title-line span {
-  color: #000;
-  font-size: clamp(1.28rem, 2.2vw, 2rem);
-  font-weight: 700;
+  gap: 40px;
+  padding: 58px 0 34px;
 }
 
 .brand-title .subtitle {
-  max-width: 1080px;
-  margin-top: 10px;
+  max-width: 1160px;
+  margin-top: 6px;
   color: #111;
-  font-size: clamp(1.08rem, 1.6vw, 1.55rem);
+  font-size: clamp(1rem, 1.35vw, 1.45rem);
   line-height: 1.45;
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.brand-title h1 {
+  max-width: 1240px;
+  color: #000;
+  font-size: clamp(2rem, 2.7vw, 2.9rem);
+  line-height: 1.18;
+  font-weight: 700;
 }
 
 .header-logo {
   width: auto;
-  height: clamp(108px, 8.5vw, 150px);
+  height: clamp(126px, 10vw, 176px);
   object-fit: contain;
   flex: 0 0 auto;
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .eyebrow {
@@ -366,6 +355,11 @@ main > * {
   font-size: 1.06rem;
   font-weight: 700;
   line-height: 1.45;
+}
+
+#kpi45Label {
+  white-space: nowrap;
+  font-size: clamp(0.88rem, 1vw, 1rem);
 }
 
 .kpi-card strong {
@@ -761,9 +755,9 @@ main > * {
 
 .rank-controls {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr);
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
   gap: 10px;
-  min-width: min(100%, 260px);
+  width: min(100%, 560px);
 }
 
 .rank-item {
@@ -1047,35 +1041,24 @@ button:disabled {
   }
 
   .page-header {
-    padding: 18px 0 14px;
+    gap: 18px;
+    padding: 22px 0 16px;
   }
 
-  h1 {
-    font-size: clamp(1.45rem, 4vw, 2.05rem);
-  }
-
-  .brand-title-line {
-    gap: 10px;
-  }
-
-  .brand-title-line h1 {
-    font-size: clamp(3.6rem, 11vw, 5.4rem);
-  }
-
-  .brand-title-line span {
-    font-size: clamp(1rem, 2.8vw, 1.35rem);
+  .brand-title h1 {
+    font-size: clamp(1.45rem, 3.9vw, 2.05rem);
   }
 
   .subtitle {
     margin-top: 4px;
-    font-size: 0.9rem;
+    font-size: clamp(0.78rem, 1.95vw, 1.02rem);
     line-height: 1.45;
   }
 
   .header-logo {
     width: auto;
-    height: clamp(86px, 12vw, 118px);
-    margin-top: 4px;
+    height: clamp(92px, 13vw, 132px);
+    margin-top: 0;
   }
 
   .data-status {
@@ -1165,39 +1148,25 @@ button:disabled {
   }
 
   .page-header {
-    gap: 10px;
+    align-items: flex-start;
+    gap: 12px;
     padding: 12px 0 10px;
   }
 
-  h1 {
-    font-size: clamp(1.25rem, 6vw, 1.65rem);
-  }
-
-  .brand-title-line {
-    display: block;
-  }
-
-  .brand-title-line h1 {
-    font-size: clamp(4rem, 22vw, 5.8rem);
-    line-height: 0.95;
-  }
-
-  .brand-title-line span {
-    display: block;
-    margin-top: 6px;
-    font-size: clamp(1rem, 5vw, 1.2rem);
-    line-height: 1.25;
+  .brand-title h1 {
+    font-size: clamp(1.18rem, 5.8vw, 1.55rem);
+    line-height: 1.22;
   }
 
   .subtitle {
-    margin-top: 6px;
-    font-size: 0.92rem;
-    line-height: 1.55;
+    margin-top: 5px;
+    font-size: clamp(0.62rem, 2.9vw, 0.78rem);
+    line-height: 1.42;
   }
 
   .header-logo {
     width: auto;
-    height: 76px;
+    height: 72px;
     margin-top: 2px;
   }
 
@@ -1447,7 +1416,7 @@ button:disabled {
 }
 
 .inline-control {
-  min-width: 220px;
+  min-width: 0;
 }
 
 .loading-overlay {

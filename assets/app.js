@@ -88,7 +88,7 @@ const state = {
   district: "",
   type: "",
   search: "",
-  rankView: "support",
+  rankView: "best",
   rankMetric: "overall",
   rankPage: 1,
   rankPageSize: 5,
@@ -278,19 +278,27 @@ async function preloadTrendYears() {
   render();
 }
 
-function preloadTrendYearsInBackground() {
-  if (trendPreloadPromise) return trendPreloadPromise;
-  trendPreloadPromise = preloadTrendYears()
-    .catch((error) => console.warn("Cannot preload trend years.", error))
-    .finally(() => {
-      trendPreloadPromise = null;
-    });
-  return trendPreloadPromise;
+function waitForTrendYearsReady(maxWaitMs = 45000) {
+  if (!trendPreloadPromise) {
+    trendPreloadPromise = preloadTrendYears()
+      .catch((error) => console.warn("Cannot preload trend years.", error))
+      .finally(() => {
+        trendPreloadPromise = null;
+      });
+  }
+  return Promise.race([
+    trendPreloadPromise,
+    timeoutAfter(maxWaitMs, "Trend preload reached wait limit").catch((error) => {
+      console.warn(error.message);
+      return false;
+    }),
+  ]);
 }
 
-function renderWithTrendPreload() {
+async function renderWithTrendReady() {
   render();
-  preloadTrendYearsInBackground();
+  await waitForTrendYearsReady();
+  render();
 }
 
 function fmtInt(value) {
@@ -328,6 +336,12 @@ function uniq(items) {
 
 function regionSort(a, b) {
   return Number(a) - Number(b);
+}
+
+function regionForProvince(province, sourceRecords = records) {
+  if (!province) return "";
+  const match = sourceRecords.find((record) => record.province === province && record.region);
+  return match ? String(match.region) : "";
 }
 
 function setOptions(select, values, placeholder, currentValue, sortFn) {
@@ -597,7 +611,7 @@ function updateKpis(items) {
   } else {
     setKpiCard(cards.total, "อปท. ทั้งหมด", fmtInt(s.total), `${scopeLabel()}${prev ? countDeltaHtml(s.total, prev.total, prev.year) : ""}`, "kpi-total");
     setKpiCard(cards.lpa, "ด้าน อปท. ควบคุมผลิตภัณฑ์ยาสูบ", fmtPct(s.rate44), `${fmtInt(s.pass44)} ผ่าน · ${fmtInt(s.fail44)} ไม่ผ่าน จากทั้งหมด ${fmtInt(s.total)}${prev ? deltaHtml(s.rate44, prev.rate44, prev.year) : ""}`, "kpi-44");
-    setKpiCard(cards.school, "สถานศึกษาสังกัด อปท. ควบคุมผลิตภัณฑ์ยาสูบ", schoolComparable ? fmtPct(s.rate45) : "ไม่มีข้อมูล", schoolComparable
+    setKpiCard(cards.school, "ด้านสถานศึกษา (อปท.) ควบคุมผลิตภัณฑ์ยาสูบ", schoolComparable ? fmtPct(s.rate45) : "ไม่มีข้อมูล", schoolComparable
       ? `${fmtInt(s.pass45)} ผ่าน · ${fmtInt(s.fail45)} ไม่ผ่าน จากฐานประเมิน ${fmtInt(s.denominator45)} · ตัดฐาน ${fmtInt(s.cut45)} · ไม่มีข้อมูล ${fmtInt(s.missing45)}${prev ? deltaHtml(s.rate45, prev.rate45, prev.year) : ""}${schoolNote ? `<span class="kpi-note">${schoolNote}</span>` : ""}`
       : schoolNote, "kpi-45");
     setKpiCard(cards.watch, "อปท. ที่ควรติดตาม", fmtInt(s.follow), `ผ่านภาพรวม ${fmtInt(s.passOverall)} แห่ง${prev ? followDeltaHtml(s.follow, prev.follow, prev.year) : ""}<span class="kpi-note">${overallBasisText(items)}</span>`, "kpi-watch");
@@ -966,8 +980,8 @@ function updateChartLegendsV2() {
   });
 }
 
-function updateRegionChartV2(items) {
-  const provinceMode = Boolean(state.region);
+function updateRegionChartV2(items, chartRegion = state.region) {
+  const provinceMode = Boolean(chartRegion);
   const groupKey = provinceMode ? "province" : "region";
   const grouped = groupBy(items, groupKey)
     .filter(([label]) => label !== "ไม่ระบุ")
@@ -982,7 +996,7 @@ function updateRegionChartV2(items) {
 
   if (els.regionChartTitle) {
     els.regionChartTitle.textContent = provinceMode
-      ? `กราฟแท่งเปรียบเทียบผลการประเมินรายจังหวัดในเขตสุขภาพที่ ${state.region}`
+      ? `กราฟแท่งเปรียบเทียบผลการประเมินรายจังหวัดในเขตสุขภาพที่ ${chartRegion}`
       : "กราฟแท่งเปรียบเทียบผลการประเมินรายเขต";
   }
 
@@ -1036,7 +1050,7 @@ function updateRegionChartV2(items) {
   }).join("");
 
   els.regionChart.innerHTML = `
-    <svg class="region-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${provinceMode ? `กราฟแท่งร้อยละตามจังหวัดในเขตสุขภาพที่ ${state.region}` : "กราฟแท่งร้อยละตามเขตสุขภาพ"}">
+    <svg class="region-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${provinceMode ? `กราฟแท่งร้อยละตามจังหวัดในเขตสุขภาพที่ ${chartRegion}` : "กราฟแท่งร้อยละตามเขตสุขภาพ"}">
       ${grid}
       <line class="axis-line" x1="${margin.left}" y1="${margin.top + plotH}" x2="${width - margin.right}" y2="${margin.top + plotH}"></line>
       <line class="axis-line" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}"></line>
@@ -1268,8 +1282,9 @@ function updateTable(items) {
 function render() {
   refreshFilterOptions();
   const items = filterRecords();
-  const regionItems = state.region
-    ? filterRecords(["province", "district", "quick"])
+  const chartRegion = state.region || regionForProvince(state.province);
+  const regionItems = chartRegion
+    ? filterRecords(["region", "province", "district", "quick"]).filter((record) => String(record.region) === String(chartRegion))
     : filterRecords(["region", "quick"]);
   updateQuickButtons();
   updateMobileFilterSummary();
@@ -1277,7 +1292,7 @@ function render() {
   updateRankMetricAvailability(items);
   updateKpis(items);
   updateYearContext(items);
-  updateRegionChartV2(regionItems);
+  updateRegionChartV2(regionItems, chartRegion);
   updateTrendChartV2(items);
   updateProvinceRanking(items);
   updateStatusChartV2(items);
@@ -1291,7 +1306,7 @@ function updateStateFromControls() {
   state.district = els.district.value;
   state.type = els.type.value;
   state.search = els.search.value;
-  state.rankView = els.rankView ? els.rankView.value : "support";
+  state.rankView = els.rankView ? els.rankView.value : "best";
   state.rankMetric = els.rankMetric.value;
   state.page = 1;
   state.rankPage = 1;
@@ -1304,14 +1319,14 @@ function updateStateFromControls() {
 if (els.year) {
   els.year.addEventListener("change", async () => {
     const selectedYear = Number(els.year.value);
-    Object.assign(state, { year: selectedYear, region: "", province: "", district: "", type: "", search: "", rankView: "support", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
+    Object.assign(state, { year: selectedYear, region: "", province: "", district: "", type: "", search: "", rankView: "best", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
     els.search.value = "";
-    if (els.rankView) els.rankView.value = "support";
+    if (els.rankView) els.rankView.value = "best";
     els.rankMetric.value = "overall";
     els.pageSize.value = "10";
     if (recordsByYear.has(selectedYear) && liveCachedYears.has(selectedYear)) {
       await loadLiveRecords(selectedYear);
-      renderWithTrendPreload();
+      await renderWithTrendReady();
       return;
     }
     setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
@@ -1321,7 +1336,7 @@ if (els.year) {
       dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${selectedYear}`;
       const liveLoaded = await loadLiveRecords(selectedYear);
       if (liveLoaded || fallbackRecords.length) {
-        renderWithTrendPreload();
+        await renderWithTrendReady();
       } else {
         showLoadError(selectedYear);
         keepLoadingOverlay = true;
@@ -1372,9 +1387,9 @@ els.nextPage.addEventListener("click", () => {
   render();
 });
 els.reset.addEventListener("click", () => {
-  Object.assign(state, { region: "", province: "", district: "", type: "", search: "", rankView: "support", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
+  Object.assign(state, { region: "", province: "", district: "", type: "", search: "", rankView: "best", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
   els.search.value = "";
-  if (els.rankView) els.rankView.value = "support";
+  if (els.rankView) els.rankView.value = "best";
   els.rankMetric.value = "overall";
   els.pageSize.value = "10";
   render();
@@ -1389,7 +1404,7 @@ async function initDashboard() {
     if (liveLoaded) {
       state.page = 1;
       state.rankPage = 1;
-      renderWithTrendPreload();
+      await renderWithTrendReady();
     } else if (fallbackRecords.length) {
       render();
     } else {

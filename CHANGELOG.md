@@ -1,6 +1,18 @@
 # Changelog
 
-## Current: v2.20 live multi-year dashboard
+## Current: v2.21 live multi-year dashboard
+
+- Preserved the accepted V2.20 dashboard as `versions/v2.20/`.
+- Reworked the dashboard header into a two-line Thai title: the main public-health title is larger, and the LPA source subtitle is smaller.
+- Adjusted the OTPC logo scale and responsive header placement for the new title layout.
+- Renamed the school KPI label to "ด้านสถานศึกษา (อปท.) ควบคุมผลิตภัณฑ์ยาสูบ" so it stays on one line where space allows.
+- Set the province performance ranking default to "พื้นที่ที่ดำเนินการได้ดี".
+- Fixed province-only filtering so selecting a province without selecting its health region still shows all provinces in that inferred health region and highlights the selected province.
+- Restored ready-first loading behavior by waiting for multi-year trend data up to about 45 seconds before closing the loading overlay.
+- Updated cache-busting asset query strings and the visible dashboard version badge to V2.21.
+- No data structure, Google Sheet, Apps Script, or privacy-scope changes in this version.
+
+## v2.20 live multi-year dashboard
 
 - Preserved the V2.19 loading safeguard and logo sizing changes.
 - Improved Apps Script loading speed by racing `fetch` and JSONP requests in parallel, using the first successful response instead of waiting for one method to time out before trying the other.

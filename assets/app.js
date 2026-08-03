@@ -164,16 +164,16 @@ function loadJsonp(url, timeoutMs = 18000) {
 }
 
 async function fetchLivePayload(url, timeoutMs = 18000) {
-  try {
+  const fetchRequest = (async () => {
     const response = await Promise.race([
-      fetch(cacheBustUrl(url), { cache: "no-store" }),
+      fetch(url, { cache: "no-store" }),
       timeoutAfter(timeoutMs, "Fetch load timed out"),
     ]);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
-  } catch (fetchError) {
-    return loadJsonp(url, timeoutMs);
-  }
+  })();
+  const jsonpRequest = loadJsonp(url, timeoutMs);
+  return Promise.any([fetchRequest, jsonpRequest]);
 }
 
 function applyLivePayload(payload, year) {
@@ -214,11 +214,11 @@ async function loadLiveRecords(year = state.year, options = {}) {
   }
   const url = liveEndpoint(year);
   if (!url) return false;
-  const attempts = Number(options.attempts || 3);
+  const attempts = Number(options.attempts || 2);
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const payload = await fetchLivePayload(url, attempt === 1 ? 18000 : 22000);
+      const payload = await fetchLivePayload(url, attempt === 1 ? 16000 : 22000);
       applyLivePayload(payload, year);
       return true;
     } catch (error) {

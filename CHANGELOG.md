@@ -1,6 +1,13 @@
 # Changelog
 
-## Current: v2.19 live multi-year dashboard
+## Current: v2.20 live multi-year dashboard
+
+- Preserved the V2.19 loading safeguard and logo sizing changes.
+- Improved Apps Script loading speed by racing `fetch` and JSONP requests in parallel, using the first successful response instead of waiting for one method to time out before trying the other.
+- Reduced live-load retry attempts to avoid keeping users on the loading screen too long when Apps Script is slow.
+- Updated cache-busting asset query strings and the visible dashboard version badge to V2.20.
+
+## v2.19 live multi-year dashboard
 
 - Preserved the accepted V2.18 dashboard as `versions/v2.18/`.
 - Enlarged the OTPC logo by controlling its visual height so it is closer to the LPA title scale while keeping mobile layout balanced.

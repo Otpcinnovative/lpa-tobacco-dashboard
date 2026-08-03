@@ -7,6 +7,7 @@ let countrySummaries = [];
 let generatedAt = "";
 const recordsByYear = new Map();
 const liveCachedYears = new Set();
+let trendPreloadPromise = null;
 
 const els = {
   year: document.getElementById("yearFilter"),
@@ -221,17 +222,29 @@ async function loadYearForTrend(year) {
 
 async function preloadTrendYears() {
   if (!availableYears.length) return;
+  const yearsToLoad = availableYears.filter((year) => !recordsByYear.has(Number(year)));
+  if (!yearsToLoad.length) return;
   const preloadWithLimit = (year) => Promise.race([
     loadYearForTrend(year),
-    new Promise((resolve) => window.setTimeout(() => resolve(false), 12000)),
+    new Promise((resolve) => window.setTimeout(() => resolve(false), 9000)),
   ]);
-  await Promise.all(availableYears.map((year) => preloadWithLimit(year)));
+  await Promise.allSettled(yearsToLoad.map((year) => preloadWithLimit(year)));
   render();
 }
 
-async function renderWithTrendReady() {
+function preloadTrendYearsInBackground() {
+  if (trendPreloadPromise) return trendPreloadPromise;
+  trendPreloadPromise = preloadTrendYears()
+    .catch((error) => console.warn("Cannot preload trend years.", error))
+    .finally(() => {
+      trendPreloadPromise = null;
+    });
+  return trendPreloadPromise;
+}
+
+function renderWithTrendPreload() {
   render();
-  await preloadTrendYears();
+  preloadTrendYearsInBackground();
 }
 
 function fmtInt(value) {
@@ -251,6 +264,16 @@ function fmtPctPlain(value) {
 function fmtRateNumber(value) {
   if (!Number.isFinite(value)) return "-";
   return new Intl.NumberFormat("th-TH", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value * 100);
+}
+
+function toRate(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function isComparableValue(value) {
+  const text = String(value || "").trim().toLowerCase();
+  return value === true || text === "ใช่" || text === "yes" || text === "true" || text === "1";
 }
 
 function uniq(items) {
@@ -918,9 +941,9 @@ function updateRegionChartV2(items) {
   }
 
   const series = activeMetricSeries();
-  const width = Math.max(1320, grouped.length * (provinceMode ? 170 : 110));
+  const width = Math.max(1320, grouped.length * (provinceMode ? 210 : 110));
   const height = 460;
-  const margin = { top: 58, right: 36, bottom: provinceMode ? 96 : 66, left: 72 };
+  const margin = { top: 58, right: 36, bottom: provinceMode ? 82 : 66, left: 72 };
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
   const groupW = plotW / grouped.length;
@@ -947,9 +970,7 @@ function updateRegionChartV2(items) {
     const muted = provinceMode && state.province && !selected;
     const xCenter = margin.left + index * groupW + groupW / 2;
     const totalBarW = series.length * barW + (series.length - 1) * barGap;
-    const labelY = provinceMode ? height - 38 : height - 20;
-    const labelTransform = provinceMode ? ` transform="rotate(-28 ${xCenter} ${labelY})"` : "";
-    const labelAnchor = provinceMode ? "end" : "middle";
+    const labelY = provinceMode ? height - 32 : height - 20;
     return `
       ${selected ? `<rect class="region-highlight" x="${xCenter - groupW / 2 + 8}" y="${margin.top - 18}" width="${groupW - 16}" height="${plotH + 34}" rx="8"></rect>` : ""}
       ${series.map((item, seriesIndex) => {
@@ -964,7 +985,7 @@ function updateRegionChartV2(items) {
           <text class="bar-value-label ${muted ? "is-muted" : ""}" x="${xPos + barW / 2}" y="${labelY}" text-anchor="middle">${fmtRateNumber(rate)}</text>
         `;
       }).join("")}
-      <text class="axis-text ${selected ? "is-selected" : ""}" x="${xCenter}" y="${labelY}" text-anchor="${labelAnchor}"${labelTransform}>${label}</text>
+      <text class="axis-text axis-category-label ${selected ? "is-selected" : ""}" x="${xCenter}" y="${labelY}" text-anchor="middle">${label}</text>
     `;
   }).join("");
 
@@ -974,17 +995,27 @@ function updateRegionChartV2(items) {
       <line class="axis-line" x1="${margin.left}" y1="${margin.top + plotH}" x2="${width - margin.right}" y2="${margin.top + plotH}"></line>
       <line class="axis-line" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}"></line>
       ${bars}
-      <text class="axis-text" x="22" y="${margin.top + plotH / 2}" text-anchor="middle" transform="rotate(-90 22 ${margin.top + plotH / 2})">ร้อยละ</text>
-      <text class="axis-text" x="${margin.left + plotW / 2}" y="${height - 2}" text-anchor="middle">${provinceMode ? "จังหวัด" : "เขตสุขภาพ"}</text>
+      <text class="axis-text axis-title-label" x="22" y="${margin.top + plotH / 2}" text-anchor="middle" transform="rotate(-90 22 ${margin.top + plotH / 2})">ร้อยละ</text>
+      <text class="axis-text axis-title-label" x="${margin.left + plotW / 2}" y="${height - 2}" text-anchor="middle">${provinceMode ? "จังหวัด" : "เขตสุขภาพ"}</text>
     </svg>
   `;
 }
 
 function updateTrendChartV2(items) {
   const cachedYears = availableYears.filter((year) => recordsByYear.has(Number(year))).sort((a, b) => Number(a) - Number(b));
-  const summaries = cachedYears.length
-    ? cachedYears.map((year) => ({ year, rows: filterRecords("quick", recordsByYear.get(Number(year))) }))
-    : [{ year: state.year, rows: items }];
+  const hasActiveFilter = Boolean(state.region || state.province || state.district || state.type || state.search || state.quick !== "all");
+  const useCountrySummary = !hasActiveFilter && countrySummaries.length;
+  const summaries = useCountrySummary
+    ? [...countrySummaries].sort((a, b) => Number(a.year) - Number(b.year)).map((row) => ({
+      year: row.year,
+      rates: {
+        "44": toRate(row.lpa_side_pass_rate),
+        "45": isComparableValue(row.school_side_comparable) ? toRate(row.school_side_pass_rate) : NaN,
+      },
+    }))
+    : cachedYears.length
+      ? cachedYears.map((year) => ({ year, rows: filterRecords("quick", recordsByYear.get(Number(year))) }))
+      : [{ year: state.year, rows: items }];
   const series = activeMetricSeries();
   const width = 1320;
   const height = 470;
@@ -1000,7 +1031,7 @@ function updateTrendChartV2(items) {
   const allPoints = series.map((item) => ({
     ...item,
     points: summaries.map((row, index) => {
-      const rate = metricRate(row.rows, item.key);
+      const rate = row.rates ? row.rates[item.key] : metricRate(row.rows, item.key);
       return { x: x(index), y: y(rate), rate, year: row.year };
     }).filter((point) => Number.isFinite(point.rate)),
   }));
@@ -1234,7 +1265,7 @@ if (els.year) {
     els.pageSize.value = "10";
     if (recordsByYear.has(selectedYear) && liveCachedYears.has(selectedYear)) {
       await loadLiveRecords(selectedYear);
-      render();
+      renderWithTrendPreload();
       return;
     }
     setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
@@ -1242,7 +1273,7 @@ if (els.year) {
       dataSourceMode = "loading";
       dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${selectedYear}`;
       await loadLiveRecords(selectedYear);
-      await renderWithTrendReady();
+      renderWithTrendPreload();
     } finally {
       setLoading(false);
     }
@@ -1305,7 +1336,7 @@ async function initDashboard() {
     if (liveLoaded) {
       state.page = 1;
       state.rankPage = 1;
-      await renderWithTrendReady();
+      renderWithTrendPreload();
     } else {
       render();
     }

@@ -1,6 +1,15 @@
 # Changelog
 
-## Current: v2.17 live multi-year dashboard
+## Current: v2.18 live multi-year dashboard
+
+- Preserved the accepted V2.17 dashboard as `versions/v2.17/`.
+- Enlarged the OTPC logo in the dashboard header for desktop, portrait tablet, and mobile layouts.
+- Reworked the health-region/province bar chart labels so province names display horizontally, with larger and bolder category labels and clearer axis-title labels.
+- Improved initial load performance by rendering the selected year as soon as live data is available, then preloading other years in the background instead of blocking the loading overlay.
+- Used country-level summary data for the default yearly trend chart when no filters are active, reducing the need to load every year of row-level data before users can start reading the dashboard.
+- Updated cache-busting asset query strings and the visible dashboard version badge to V2.18.
+
+## v2.17 live multi-year dashboard
 
 - Preserved the accepted V2.16 dashboard as `versions/v2.16/`.
 - Added explicit cache-busting query strings to the CSS, config, logo, and app script assets so GitHub Pages users receive the newest V2.17 code instead of cached V2.15/V2.16 assets.

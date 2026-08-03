@@ -119,14 +119,30 @@ function liveEndpoint(year = state.year) {
   return url.toString();
 }
 
-function loadJsonp(url) {
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function cacheBustUrl(url, key = "t") {
+  const nextUrl = new URL(url);
+  nextUrl.searchParams.set(key, `${Date.now()}_${Math.floor(Math.random() * 100000)}`);
+  return nextUrl.toString();
+}
+
+function timeoutAfter(ms, message) {
+  return new Promise((_, reject) => {
+    window.setTimeout(() => reject(new Error(message)), ms);
+  });
+}
+
+function loadJsonp(url, timeoutMs = 18000) {
   return new Promise((resolve, reject) => {
     const callbackName = `lpaJsonp_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
     const script = document.createElement("script");
     const timeout = window.setTimeout(() => {
       cleanup();
       reject(new Error("JSONP load timed out"));
-    }, 12000);
+    }, timeoutMs);
     const cleanup = () => {
       window.clearTimeout(timeout);
       delete window[callbackName];
@@ -136,7 +152,7 @@ function loadJsonp(url) {
       cleanup();
       resolve(payload);
     };
-    const jsonpUrl = new URL(url);
+    const jsonpUrl = new URL(cacheBustUrl(url, "jsonp_t"));
     jsonpUrl.searchParams.set("callback", callbackName);
     script.src = jsonpUrl.toString();
     script.onerror = () => {
@@ -147,7 +163,47 @@ function loadJsonp(url) {
   });
 }
 
-async function loadLiveRecords(year = state.year) {
+async function fetchLivePayload(url, timeoutMs = 18000) {
+  try {
+    const response = await Promise.race([
+      fetch(cacheBustUrl(url), { cache: "no-store" }),
+      timeoutAfter(timeoutMs, "Fetch load timed out"),
+    ]);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (fetchError) {
+    return loadJsonp(url, timeoutMs);
+  }
+}
+
+function applyLivePayload(payload, year) {
+  if (!payload || !Array.isArray(payload.records)) {
+    throw new Error("Live payload has no records array");
+  }
+  const payloadYear = Number(payload.year || year);
+  records = payload.records;
+  recordsByYear.set(payloadYear, payload.records);
+  liveCachedYears.add(payloadYear);
+  if (Array.isArray(payload.availableYears) && payload.availableYears.length) {
+    availableYears = payload.availableYears.map(Number).filter((item) => Number.isFinite(item));
+  }
+  if (Array.isArray(payload.countrySummaries)) {
+    countrySummaries = payload.countrySummaries;
+  }
+  generatedAt = payload.generatedAt || generatedAt;
+  state.year = Number(payload.year || year || (window.LPA_CONFIG || {}).defaultYear || 2568);
+  dataSourceMode = "live";
+  dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`;
+}
+
+function showLoadError(year = state.year) {
+  dataSourceMode = "error";
+  dataSourceLabel = `ยังโหลดข้อมูลสดไม่ได้ · ปี ${year}`;
+  if (els.loadingTitle) els.loadingTitle.textContent = "ยังโหลดข้อมูลไม่ได้";
+  setLoading(true, "ระบบกำลังรอข้อมูลจาก Google Sheets กรุณารีเฟรชอีกครั้งในสักครู่");
+}
+
+async function loadLiveRecords(year = state.year, options = {}) {
   const numericYear = Number(year);
   if (recordsByYear.has(numericYear) && liveCachedYears.has(numericYear)) {
     records = recordsByYear.get(numericYear);
@@ -158,40 +214,30 @@ async function loadLiveRecords(year = state.year) {
   }
   const url = liveEndpoint(year);
   if (!url) return false;
-  try {
-    let payload;
+  const attempts = Number(options.attempts || 3);
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      payload = await response.json();
-    } catch (fetchError) {
-      payload = await loadJsonp(url);
+      const payload = await fetchLivePayload(url, attempt === 1 ? 18000 : 22000);
+      applyLivePayload(payload, year);
+      return true;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(900 * attempt);
     }
-    if (!payload || !Array.isArray(payload.records)) {
-      throw new Error("Live payload has no records array");
-    }
-    records = payload.records;
-    recordsByYear.set(Number(payload.year || year), payload.records);
-    liveCachedYears.add(Number(payload.year || year));
-    if (Array.isArray(payload.availableYears) && payload.availableYears.length) {
-      availableYears = payload.availableYears.map(Number).filter((item) => Number.isFinite(item));
-    }
-    if (Array.isArray(payload.countrySummaries)) {
-      countrySummaries = payload.countrySummaries;
-    }
-    generatedAt = payload.generatedAt || generatedAt;
-    state.year = Number(payload.year || year || (window.LPA_CONFIG || {}).defaultYear || 2568);
-    dataSourceMode = "live";
-    dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`;
-    return true;
-  } catch (error) {
-    console.warn("Cannot load live LPA data. Using fallback data.", error);
-    records = fallbackRecords;
-    dataSourceMode = "fallback";
-    dataSourceLabel = "ข้อมูลสำรองจากไฟล์ cleaned · ปี 2568";
-    state.year = Number((window.LPA_CONFIG || {}).defaultYear || 2568);
+  }
+  console.warn("Cannot load live LPA data.", lastError);
+  if (!fallbackRecords.length) {
+    dataSourceMode = "error";
+    dataSourceLabel = `ยังโหลดข้อมูลสดไม่ได้ · ปี ${numericYear}`;
     return false;
   }
+  console.warn("Using fallback LPA data.", lastError);
+  records = fallbackRecords;
+  dataSourceMode = "fallback";
+  dataSourceLabel = "ข้อมูลสำรองจากไฟล์ cleaned · ปี 2568";
+  state.year = Number((window.LPA_CONFIG || {}).defaultYear || 2568);
+  return false;
 }
 
 async function loadYearForTrend(year) {
@@ -1269,13 +1315,19 @@ if (els.year) {
       return;
     }
     setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
+    let keepLoadingOverlay = false;
     try {
       dataSourceMode = "loading";
       dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${selectedYear}`;
-      await loadLiveRecords(selectedYear);
-      renderWithTrendPreload();
+      const liveLoaded = await loadLiveRecords(selectedYear);
+      if (liveLoaded || fallbackRecords.length) {
+        renderWithTrendPreload();
+      } else {
+        showLoadError(selectedYear);
+        keepLoadingOverlay = true;
+      }
     } finally {
-      setLoading(false);
+      if (!keepLoadingOverlay) setLoading(false);
     }
   });
 }
@@ -1331,19 +1383,23 @@ els.reset.addEventListener("click", () => {
 
 async function initDashboard() {
   setLoading(true, `กำลังโหลดข้อมูลปี ${state.year}`);
+  let keepLoadingOverlay = false;
   try {
     const liveLoaded = await loadLiveRecords();
     if (liveLoaded) {
       state.page = 1;
       state.rankPage = 1;
       renderWithTrendPreload();
-    } else {
+    } else if (fallbackRecords.length) {
       render();
+    } else {
+      showLoadError(state.year);
+      keepLoadingOverlay = true;
     }
   } finally {
-    setLoading(false);
+    if (!keepLoadingOverlay) setLoading(false);
   }
-  if (!records.length) {
+  if (!records.length && !keepLoadingOverlay) {
     render();
   }
 }

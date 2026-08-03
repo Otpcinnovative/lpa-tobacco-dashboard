@@ -1,6 +1,14 @@
 # Changelog
 
-## Current: v2.18 live multi-year dashboard
+## Current: v2.19 live multi-year dashboard
+
+- Preserved the accepted V2.18 dashboard as `versions/v2.18/`.
+- Enlarged the OTPC logo by controlling its visual height so it is closer to the LPA title scale while keeping mobile layout balanced.
+- Hardened live Google Sheet loading with cache-busted Apps Script requests, JSONP cache busting, retries, and longer per-attempt timeouts.
+- Prevented the dashboard from silently rendering zero-count KPI cards when live loading fails and no fallback row data is available; the loading overlay now shows a clear data-loading issue instead.
+- Updated cache-busting asset query strings and the visible dashboard version badge to V2.19.
+
+## v2.18 live multi-year dashboard
 
 - Preserved the accepted V2.17 dashboard as `versions/v2.17/`.
 - Enlarged the OTPC logo in the dashboard header for desktop, portrait tablet, and mobile layouts.

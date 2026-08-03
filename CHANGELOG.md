@@ -1,6 +1,13 @@
 # Changelog
 
-## Current: v2.16 live multi-year dashboard
+## Current: v2.17 live multi-year dashboard
+
+- Preserved the accepted V2.16 dashboard as `versions/v2.16/`.
+- Added explicit cache-busting query strings to the CSS, config, logo, and app script assets so GitHub Pages users receive the newest V2.17 code instead of cached V2.15/V2.16 assets.
+- Kept the V2.16 visual and chart behavior changes unchanged.
+- Updated the visible dashboard version badge to V2.17.
+
+## v2.16 live multi-year dashboard
 
 - Preserved the accepted V2.15 dashboard as `versions/v2.15/`.
 - Reduced the spacing between the LPA title block and the Thai dashboard description.

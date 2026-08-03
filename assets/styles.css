@@ -49,7 +49,35 @@ select {
 }
 
 .page-header {
-  padding: 18px 0 24px;
+  padding: 46px 0 34px;
+}
+
+.brand-title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.brand-title-line h1 {
+  font-size: clamp(5rem, 10vw, 9rem);
+  line-height: 0.9;
+  font-weight: 700;
+}
+
+.brand-title-line span {
+  color: #000;
+  font-size: clamp(1.28rem, 2.2vw, 2rem);
+  font-weight: 700;
+}
+
+.brand-title .subtitle {
+  max-width: 1080px;
+  margin-top: 22px;
+  color: #111;
+  font-size: clamp(1.08rem, 1.6vw, 1.55rem);
+  line-height: 1.45;
+  font-weight: 600;
 }
 
 .eyebrow {
@@ -245,7 +273,7 @@ button:hover {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 14px;
+  margin-top: -6px;
 }
 
 .definition-strip > div {
@@ -323,8 +351,9 @@ main > * {
 
 .kpi-label {
   color: var(--muted);
-  font-size: 0.98rem;
-  font-weight: 500;
+  font-size: 1.06rem;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .kpi-card strong {
@@ -994,11 +1023,23 @@ button:disabled {
   }
 
   .page-header {
-    padding: 4px 0 10px;
+    padding: 18px 0 14px;
   }
 
   h1 {
     font-size: clamp(1.45rem, 4vw, 2.05rem);
+  }
+
+  .brand-title-line {
+    gap: 10px;
+  }
+
+  .brand-title-line h1 {
+    font-size: clamp(3.6rem, 11vw, 5.4rem);
+  }
+
+  .brand-title-line span {
+    font-size: clamp(1rem, 2.8vw, 1.35rem);
   }
 
   .subtitle {
@@ -1063,7 +1104,17 @@ button:disabled {
   }
 
   .definition-strip {
-    display: none;
+    gap: 8px;
+    margin-top: -8px;
+  }
+
+  .definition-strip > div {
+    padding: 10px 12px;
+  }
+
+  .definition-strip span {
+    font-size: 0.78rem;
+    line-height: 1.45;
   }
 
   .kpi-card {
@@ -1085,17 +1136,33 @@ button:disabled {
 
   .page-header {
     gap: 10px;
-    padding: 2px 0 10px;
+    padding: 12px 0 10px;
   }
 
   h1 {
     font-size: clamp(1.25rem, 6vw, 1.65rem);
   }
 
-  .subtitle {
+  .brand-title-line {
+    display: block;
+  }
+
+  .brand-title-line h1 {
+    font-size: clamp(4rem, 22vw, 5.8rem);
+    line-height: 0.95;
+  }
+
+  .brand-title-line span {
+    display: block;
     margin-top: 6px;
-    font-size: 0.84rem;
-    line-height: 1.5;
+    font-size: clamp(1rem, 5vw, 1.2rem);
+    line-height: 1.25;
+  }
+
+  .subtitle {
+    margin-top: 10px;
+    font-size: 0.92rem;
+    line-height: 1.55;
   }
 
   .data-status {
@@ -1251,7 +1318,21 @@ button:disabled {
   }
 
   .definition-strip {
-    display: none;
+    gap: 8px;
+    margin-top: -6px;
+  }
+
+  .definition-strip > div {
+    padding: 10px 12px;
+  }
+
+  .definition-strip strong {
+    font-size: 0.86rem;
+  }
+
+  .definition-strip span {
+    font-size: 0.76rem;
+    line-height: 1.45;
   }
 
   .vertical-chart {

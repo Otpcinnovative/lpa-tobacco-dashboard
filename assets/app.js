@@ -525,7 +525,7 @@ function updateKpis(items) {
     setKpiCard(cards.school, "ติดตามด้านสถานศึกษา", fmtInt(currentBreakdown.school), `${fmtPct(schoolBase ? currentBreakdown.school / schoolBase : NaN)} ของฐานด้านสถานศึกษา ${fmtInt(schoolBase)} แห่ง`, "kpi-45");
     setKpiCard(cards.watch, "ไม่ผ่านทั้งสองด้าน", fmtInt(currentBreakdown.both), `${fmtPct(base.total ? currentBreakdown.both / base.total : NaN)} ของ อปท. ทั้งหมด`, "kpi-watch");
   } else {
-    setKpiCard(cards.total, "อปท. ในมุมมองนี้", fmtInt(s.total), `${scopeLabel()}${prev ? countDeltaHtml(s.total, prev.total, prev.year) : ""}`, "kpi-total");
+    setKpiCard(cards.total, "อปท. ทั้งหมด", fmtInt(s.total), `${scopeLabel()}${prev ? countDeltaHtml(s.total, prev.total, prev.year) : ""}`, "kpi-total");
     setKpiCard(cards.lpa, "ด้าน อปท. ควบคุมผลิตภัณฑ์ยาสูบ", fmtPct(s.rate44), `${fmtInt(s.pass44)} ผ่าน · ${fmtInt(s.fail44)} ไม่ผ่าน จากทั้งหมด ${fmtInt(s.total)}${prev ? deltaHtml(s.rate44, prev.rate44, prev.year) : ""}`, "kpi-44");
     setKpiCard(cards.school, "สถานศึกษาสังกัด อปท. ควบคุมผลิตภัณฑ์ยาสูบ", schoolComparable ? fmtPct(s.rate45) : "ไม่มีข้อมูล", schoolComparable
       ? `${fmtInt(s.pass45)} ผ่าน · ${fmtInt(s.fail45)} ไม่ผ่าน จากฐานประเมิน ${fmtInt(s.denominator45)} · ตัดฐาน ${fmtInt(s.cut45)} · ไม่มีข้อมูล ${fmtInt(s.missing45)}${prev ? deltaHtml(s.rate45, prev.rate45, prev.year) : ""}${schoolNote ? `<span class="kpi-note">${schoolNote}</span>` : ""}`
@@ -998,7 +998,7 @@ function updateTrendChartV2(items) {
   };
 
   els.trendChart.innerHTML = `
-    <svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟเส้นเทียบรายปี">
+    <svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟเส้นเปรียบเทียบผลการประเมินภาพรวมระดับประเทศ">
       ${ticks.map((tick) => {
         const yy = y(tick);
         return `

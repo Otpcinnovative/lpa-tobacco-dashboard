@@ -1,6 +1,16 @@
 # Changelog
 
-## Current: v2.14 live multi-year dashboard
+## Current: v2.15 live multi-year dashboard
+
+- Preserved the accepted V2.14 dashboard as `versions/v2.14/`.
+- Reworked the page heading into an LPA-first title with "(Local Performance Assessment)" and a two-line Thai description.
+- Moved the pass criteria and cut-base notes below the KPI cards so users see the main numbers before reading interpretation notes.
+- Renamed the total KPI label to "อปท. ทั้งหมด" and made KPI labels more prominent.
+- Renamed the yearly line chart, health-region bar chart, and Thailand map placeholder to match owner feedback.
+- Kept the province ranking panel unchanged; no data structure, Google Sheet, or Apps Script changes in this version.
+- Updated the visible dashboard version badge to V2.15.
+
+## v2.14 live multi-year dashboard
 
 - Preserved the accepted V2.13 dashboard as `versions/v2.13/`.
 - Renamed the province ranking views to "พื้นที่ที่ควรติดตาม" and "พื้นที่ที่ดำเนินการได้ดี".

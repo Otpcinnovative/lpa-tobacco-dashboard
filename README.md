@@ -4,7 +4,7 @@ Dashboard การดำเนินงานควบคุมผลิตภ�
 
 ## Current Version
 
-V2.15 live multi-year dashboard
+V2.16 live multi-year dashboard
 
 ## Data Source
 

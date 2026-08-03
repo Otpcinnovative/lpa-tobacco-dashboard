@@ -1,6 +1,15 @@
 # Changelog
 
-## Current: v2.15 live multi-year dashboard
+## Current: v2.16 live multi-year dashboard
+
+- Preserved the accepted V2.15 dashboard as `versions/v2.15/`.
+- Reduced the spacing between the LPA title block and the Thai dashboard description.
+- Added the OTPC logo to the top-right of the dashboard header using `assets/logo-otpc.jpg`.
+- Updated the bar chart behavior: the default view compares health regions, while selecting a health region changes the chart to compare provinces within that region.
+- Kept the province comparison chart contextual; selecting a province still leaves all provinces in the selected health region visible for comparison.
+- Updated the visible dashboard version badge to V2.16.
+
+## v2.15 live multi-year dashboard
 
 - Preserved the accepted V2.14 dashboard as `versions/v2.14/`.
 - Reworked the page heading into an LPA-first title with "(Local Performance Assessment)" and a two-line Thai description.

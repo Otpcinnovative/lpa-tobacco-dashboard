@@ -49,6 +49,7 @@ const els = {
   yearContextNote: document.getElementById("yearContextNote"),
   mapPill: document.getElementById("mapPill"),
   regionChart: document.getElementById("regionChart"),
+  regionChartTitle: document.getElementById("regionChartTitle"),
   trendChart: document.getElementById("trendChart"),
   provinceRanking: document.getElementById("provinceRanking"),
   statusChart: document.getElementById("statusChart"),
@@ -897,19 +898,29 @@ function updateChartLegendsV2() {
 }
 
 function updateRegionChartV2(items) {
-  const grouped = groupBy(items, "region")
-    .filter(([region]) => region !== "ไม่ระบุ")
-    .sort((a, b) => Number(a[0]) - Number(b[0]));
+  const provinceMode = Boolean(state.region);
+  const groupKey = provinceMode ? "province" : "region";
+  const grouped = groupBy(items, groupKey)
+    .filter(([label]) => label !== "ไม่ระบุ")
+    .sort((a, b) => provinceMode
+      ? String(a[0]).localeCompare(String(b[0]), "th")
+      : Number(a[0]) - Number(b[0]));
 
   if (!grouped.length) {
     els.regionChart.innerHTML = `<p class="empty">ไม่มีข้อมูลในเงื่อนไขนี้</p>`;
     return;
   }
 
+  if (els.regionChartTitle) {
+    els.regionChartTitle.textContent = provinceMode
+      ? `กราฟแท่งเปรียบเทียบผลการประเมินรายจังหวัดในเขตสุขภาพที่ ${state.region}`
+      : "กราฟแท่งเปรียบเทียบผลการประเมินรายเขต";
+  }
+
   const series = activeMetricSeries();
-  const width = 1320;
+  const width = Math.max(1320, grouped.length * (provinceMode ? 170 : 110));
   const height = 460;
-  const margin = { top: 58, right: 36, bottom: 66, left: 72 };
+  const margin = { top: 58, right: 36, bottom: provinceMode ? 96 : 66, left: 72 };
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
   const groupW = plotW / grouped.length;
@@ -931,11 +942,14 @@ function updateRegionChartV2(items) {
     `;
   }).join("");
 
-  const bars = grouped.map(([region, rows], index) => {
-    const selected = state.region && String(region) === String(state.region);
-    const muted = state.region && !selected;
+  const bars = grouped.map(([label, rows], index) => {
+    const selected = provinceMode ? state.province && String(label) === String(state.province) : false;
+    const muted = provinceMode && state.province && !selected;
     const xCenter = margin.left + index * groupW + groupW / 2;
     const totalBarW = series.length * barW + (series.length - 1) * barGap;
+    const labelY = provinceMode ? height - 38 : height - 20;
+    const labelTransform = provinceMode ? ` transform="rotate(-28 ${xCenter} ${labelY})"` : "";
+    const labelAnchor = provinceMode ? "end" : "middle";
     return `
       ${selected ? `<rect class="region-highlight" x="${xCenter - groupW / 2 + 8}" y="${margin.top - 18}" width="${groupW - 16}" height="${plotH + 34}" rx="8"></rect>` : ""}
       ${series.map((item, seriesIndex) => {
@@ -950,18 +964,18 @@ function updateRegionChartV2(items) {
           <text class="bar-value-label ${muted ? "is-muted" : ""}" x="${xPos + barW / 2}" y="${labelY}" text-anchor="middle">${fmtRateNumber(rate)}</text>
         `;
       }).join("")}
-      <text class="axis-text ${selected ? "is-selected" : ""}" x="${xCenter}" y="${height - 20}" text-anchor="middle">${region}</text>
+      <text class="axis-text ${selected ? "is-selected" : ""}" x="${xCenter}" y="${labelY}" text-anchor="${labelAnchor}"${labelTransform}>${label}</text>
     `;
   }).join("");
 
   els.regionChart.innerHTML = `
-    <svg class="region-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟแท่งร้อยละตามเขตสุขภาพ">
+    <svg class="region-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${provinceMode ? `กราฟแท่งร้อยละตามจังหวัดในเขตสุขภาพที่ ${state.region}` : "กราฟแท่งร้อยละตามเขตสุขภาพ"}">
       ${grid}
       <line class="axis-line" x1="${margin.left}" y1="${margin.top + plotH}" x2="${width - margin.right}" y2="${margin.top + plotH}"></line>
       <line class="axis-line" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}"></line>
       ${bars}
       <text class="axis-text" x="22" y="${margin.top + plotH / 2}" text-anchor="middle" transform="rotate(-90 22 ${margin.top + plotH / 2})">ร้อยละ</text>
-      <text class="axis-text" x="${margin.left + plotW / 2}" y="${height - 2}" text-anchor="middle">เขตสุขภาพ</text>
+      <text class="axis-text" x="${margin.left + plotW / 2}" y="${height - 2}" text-anchor="middle">${provinceMode ? "จังหวัด" : "เขตสุขภาพ"}</text>
     </svg>
   `;
 }
@@ -1177,7 +1191,9 @@ function updateTable(items) {
 function render() {
   refreshFilterOptions();
   const items = filterRecords();
-  const regionItems = filterRecords(["region", "quick"]);
+  const regionItems = state.region
+    ? filterRecords(["province", "district", "quick"])
+    : filterRecords(["region", "quick"]);
   updateQuickButtons();
   updateMobileFilterSummary();
   updateChartLegendsV2();

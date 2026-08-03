@@ -1,5 +1,6 @@
 # Internal source data and working files
 *.xlsx
+Logo OTPC.jpg
 outputs/
 scripts/
 apps_script/

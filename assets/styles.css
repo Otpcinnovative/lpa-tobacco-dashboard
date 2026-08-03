@@ -49,6 +49,10 @@ select {
 }
 
 .page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
   padding: 46px 0 34px;
 }
 
@@ -73,11 +77,19 @@ select {
 
 .brand-title .subtitle {
   max-width: 1080px;
-  margin-top: 22px;
+  margin-top: 10px;
   color: #111;
   font-size: clamp(1.08rem, 1.6vw, 1.55rem);
   line-height: 1.45;
   font-weight: 600;
+}
+
+.header-logo {
+  width: clamp(72px, 7vw, 118px);
+  height: auto;
+  object-fit: contain;
+  flex: 0 0 auto;
+  margin-top: 8px;
 }
 
 .eyebrow {
@@ -1043,9 +1055,14 @@ button:disabled {
   }
 
   .subtitle {
-    margin-top: 6px;
+    margin-top: 4px;
     font-size: 0.9rem;
     line-height: 1.45;
+  }
+
+  .header-logo {
+    width: clamp(58px, 9vw, 86px);
+    margin-top: 4px;
   }
 
   .data-status {
@@ -1160,9 +1177,14 @@ button:disabled {
   }
 
   .subtitle {
-    margin-top: 10px;
+    margin-top: 6px;
     font-size: 0.92rem;
     line-height: 1.55;
+  }
+
+  .header-logo {
+    width: 58px;
+    margin-top: 2px;
   }
 
   .data-status {

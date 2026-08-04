@@ -1,6 +1,16 @@
 # Changelog
 
-## Current: v2.22 live multi-year dashboard
+## Current: v2.23 live multi-year dashboard
+
+- Preserved the accepted V2.22 dashboard as `versions/v2.22/`.
+- Changed background trend preload order to prioritize recent comparison years first, typically 2567, 2566, then 2565 after the selected 2568 data loads.
+- Added gentler background retry behavior for yearly trend loading, with longer pauses between failed attempts and between years.
+- Added browser-side IndexedDB caching for successfully loaded yearly payloads so repeat visits or refreshes on the same device can render cached data first, then refresh live data in the background.
+- Year changes now use any already loaded or browser-cached year immediately before attempting a live refresh.
+- Updated cache-busting asset query strings and the visible dashboard version badge to V2.23.
+- No Google Sheet, Apps Script, data structure, or privacy-scope changes in this version.
+
+## v2.22 live multi-year dashboard
 
 - Preserved the accepted V2.21 dashboard as `versions/v2.21/`.
 - Reworked live data loading to feel closer to V2.8: the selected year loads first, the dashboard renders, and other years are preloaded in the background.

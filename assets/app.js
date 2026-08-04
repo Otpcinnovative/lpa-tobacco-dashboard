@@ -8,6 +8,10 @@ let generatedAt = "";
 const recordsByYear = new Map();
 const liveCachedYears = new Set();
 let trendPreloadPromise = null;
+let browserCachePromise = null;
+const browserCachedYears = new Set();
+const BROWSER_CACHE_DB = "lpa-dashboard-cache";
+const BROWSER_CACHE_STORE = "yearPayloads";
 
 const els = {
   year: document.getElementById("yearFilter"),
@@ -138,6 +142,74 @@ function timeoutAfter(ms, message) {
   });
 }
 
+function openBrowserCache() {
+  if (typeof indexedDB === "undefined") return Promise.resolve(null);
+  if (browserCachePromise) return browserCachePromise;
+  browserCachePromise = new Promise((resolve) => {
+    const request = indexedDB.open(BROWSER_CACHE_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(BROWSER_CACHE_STORE)) {
+        db.createObjectStore(BROWSER_CACHE_STORE, { keyPath: "year" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => {
+      console.warn("Cannot open browser cache.", request.error);
+      resolve(null);
+    };
+  });
+  return browserCachePromise;
+}
+
+async function readBrowserCache(year) {
+  const db = await openBrowserCache();
+  if (!db) return null;
+  const numericYear = Number(year);
+  return new Promise((resolve) => {
+    const tx = db.transaction(BROWSER_CACHE_STORE, "readonly");
+    const request = tx.objectStore(BROWSER_CACHE_STORE).get(numericYear);
+    request.onsuccess = () => {
+      const entry = request.result;
+      resolve(entry && entry.payload && Array.isArray(entry.payload.records) ? entry.payload : null);
+    };
+    request.onerror = () => resolve(null);
+  });
+}
+
+async function writeBrowserCache(payload, year) {
+  if (!payload || !Array.isArray(payload.records)) return;
+  const db = await openBrowserCache();
+  if (!db) return;
+  const numericYear = Number(payload.year || year);
+  try {
+    const tx = db.transaction(BROWSER_CACHE_STORE, "readwrite");
+    tx.objectStore(BROWSER_CACHE_STORE).put({
+      year: numericYear,
+      cachedAt: Date.now(),
+      payload: { ...payload, year: numericYear },
+    });
+    browserCachedYears.add(numericYear);
+  } catch (error) {
+    console.warn("Cannot write browser cache.", error);
+  }
+}
+
+function applyCachedPayload(payload, year) {
+  const numericYear = Number(payload.year || year);
+  records = payload.records;
+  recordsByYear.set(numericYear, payload.records);
+  browserCachedYears.add(numericYear);
+  if (Array.isArray(payload.availableYears) && payload.availableYears.length) {
+    availableYears = payload.availableYears.map(Number).filter((item) => Number.isFinite(item));
+  }
+  if (Array.isArray(payload.countrySummaries)) countrySummaries = payload.countrySummaries;
+  generatedAt = payload.generatedAt || generatedAt;
+  state.year = numericYear;
+  dataSourceMode = "cache";
+  dataSourceLabel = `ข้อมูลที่เคยโหลดไว้ในเครื่อง · ปี ${state.year}`;
+}
+
 function loadJsonp(url, timeoutMs = 18000) {
   return new Promise((resolve, reject) => {
     const callbackName = `lpaJsonp_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
@@ -179,12 +251,11 @@ async function fetchLivePayload(url, timeoutMs = 18000) {
   }
 }
 
-function applyLivePayload(payload, year) {
+function applyLivePayload(payload, year, options = {}) {
   if (!payload || !Array.isArray(payload.records)) {
     throw new Error("Live payload has no records array");
   }
   const payloadYear = Number(payload.year || year);
-  records = payload.records;
   recordsByYear.set(payloadYear, payload.records);
   liveCachedYears.add(payloadYear);
   if (Array.isArray(payload.availableYears) && payload.availableYears.length) {
@@ -194,9 +265,12 @@ function applyLivePayload(payload, year) {
     countrySummaries = payload.countrySummaries;
   }
   generatedAt = payload.generatedAt || generatedAt;
-  state.year = Number(payload.year || year || (window.LPA_CONFIG || {}).defaultYear || 2568);
-  dataSourceMode = "live";
-  dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`;
+  if (options.applyCurrent !== false) {
+    records = payload.records;
+    state.year = payloadYear || Number((window.LPA_CONFIG || {}).defaultYear || 2568);
+    dataSourceMode = "live";
+    dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`;
+  }
 }
 
 function showLoadError(year = state.year) {
@@ -210,10 +284,12 @@ function showLoadError(year = state.year) {
 async function loadLiveRecords(year = state.year, options = {}) {
   const numericYear = Number(year);
   if (recordsByYear.has(numericYear) && liveCachedYears.has(numericYear)) {
-    records = recordsByYear.get(numericYear);
-    state.year = numericYear;
-    dataSourceMode = "live";
-    dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`;
+    if (options.applyCurrent !== false) {
+      records = recordsByYear.get(numericYear);
+      state.year = numericYear;
+      dataSourceMode = "live";
+      dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`;
+    }
     return true;
   }
   const url = liveEndpoint(year);
@@ -223,7 +299,8 @@ async function loadLiveRecords(year = state.year, options = {}) {
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const payload = await fetchLivePayload(url, attempt === 1 ? 52000 : 60000);
-      applyLivePayload(payload, year);
+      applyLivePayload(payload, year, { applyCurrent: options.applyCurrent !== false });
+      writeBrowserCache(payload, year);
       return true;
     } catch (error) {
       lastError = error;
@@ -247,6 +324,14 @@ async function loadLiveRecords(year = state.year, options = {}) {
 async function loadYearForTrend(year) {
   const numericYear = Number(year);
   if (recordsByYear.has(numericYear)) return true;
+  const cachedPayload = await readBrowserCache(numericYear);
+  if (cachedPayload) {
+    recordsByYear.set(numericYear, cachedPayload.records);
+    browserCachedYears.add(numericYear);
+    if (Array.isArray(cachedPayload.countrySummaries)) countrySummaries = cachedPayload.countrySummaries;
+    if (cachedPayload.generatedAt) generatedAt = cachedPayload.generatedAt;
+    return true;
+  }
   const url = liveEndpoint(numericYear);
   if (!url) return false;
   try {
@@ -256,6 +341,7 @@ async function loadYearForTrend(year) {
     liveCachedYears.add(numericYear);
     if (Array.isArray(payload.countrySummaries)) countrySummaries = payload.countrySummaries;
     if (payload.generatedAt) generatedAt = payload.generatedAt;
+    writeBrowserCache(payload, numericYear);
     return true;
   } catch (error) {
     console.warn(`Cannot preload LPA data for ${numericYear}.`, error);
@@ -265,12 +351,20 @@ async function loadYearForTrend(year) {
 
 async function preloadTrendYears() {
   if (!availableYears.length) return;
-  const yearsToLoad = availableYears.filter((year) => !recordsByYear.has(Number(year)));
+  const yearsToLoad = availableYears
+    .filter((year) => !recordsByYear.has(Number(year)))
+    .sort((a, b) => Number(b) - Number(a));
   if (!yearsToLoad.length) return;
   for (const year of yearsToLoad) {
-    await loadYearForTrend(year);
+    let loaded = false;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      loaded = await loadYearForTrend(year);
+      if (loaded) break;
+      await sleep(attempt === 1 ? 8000 : 20000);
+    }
+    if (!loaded) console.warn(`Trend year ${year} is still unavailable after retry.`);
     render();
-    await sleep(600);
+    await sleep(2500);
   }
 }
 
@@ -287,6 +381,21 @@ function preloadTrendYearsInBackground() {
 function renderWithTrendPreload() {
   render();
   preloadTrendYearsInBackground();
+}
+
+async function refreshLiveYearInBackground(year) {
+  const numericYear = Number(year);
+  try {
+    const liveLoaded = await loadLiveRecords(numericYear, { applyCurrent: false });
+    if (liveLoaded && Number(state.year) === numericYear) {
+      records = recordsByYear.get(numericYear) || records;
+      dataSourceMode = "live";
+      dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`;
+      renderWithTrendPreload();
+    }
+  } catch (error) {
+    console.warn(`Cannot refresh live data for ${numericYear}.`, error);
+  }
 }
 
 function fmtInt(value) {
@@ -1317,9 +1426,24 @@ if (els.year) {
     if (els.rankView) els.rankView.value = "best";
     els.rankMetric.value = "overall";
     els.pageSize.value = "10";
-    if (recordsByYear.has(selectedYear) && liveCachedYears.has(selectedYear)) {
-      await loadLiveRecords(selectedYear);
+    if (recordsByYear.has(selectedYear)) {
+      records = recordsByYear.get(selectedYear);
+      state.year = selectedYear;
+      dataSourceMode = liveCachedYears.has(selectedYear) ? "live" : "cache";
+      dataSourceLabel = liveCachedYears.has(selectedYear)
+        ? `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`
+        : `ข้อมูลที่เคยโหลดไว้ในเครื่อง · ปี ${state.year}`;
       renderWithTrendPreload();
+      if (!liveCachedYears.has(selectedYear)) {
+        refreshLiveYearInBackground(selectedYear);
+      }
+      return;
+    }
+    const cachedPayload = await readBrowserCache(selectedYear);
+    if (cachedPayload) {
+      applyCachedPayload(cachedPayload, selectedYear);
+      renderWithTrendPreload();
+      refreshLiveYearInBackground(selectedYear);
       return;
     }
     setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
@@ -1399,6 +1523,16 @@ async function initDashboard() {
   setLoading(true, `กำลังโหลดข้อมูลปี ${state.year}`);
   let keepLoadingOverlay = false;
   try {
+    const cachedPayload = await readBrowserCache(state.year);
+    if (cachedPayload) {
+      applyCachedPayload(cachedPayload, state.year);
+      state.page = 1;
+      state.rankPage = 1;
+      renderWithTrendPreload();
+      setLoading(false);
+      refreshLiveYearInBackground(state.year);
+      return;
+    }
     const liveLoaded = await loadLiveRecords();
     if (liveLoaded) {
       state.page = 1;

@@ -1,6 +1,17 @@
 # Changelog
 
-## Current: v2.21 live multi-year dashboard
+## Current: v2.22 live multi-year dashboard
+
+- Preserved the accepted V2.21 dashboard as `versions/v2.21/`.
+- Reworked live data loading to feel closer to V2.8: the selected year loads first, the dashboard renders, and other years are preloaded in the background.
+- Reduced load pressure on Apps Script by using sequential fetch-then-JSONP fallback instead of racing fetch and JSONP at the same time.
+- Changed multi-year preloading from parallel requests to one-year-at-a-time loading with a short pause between requests.
+- Extended live-data request timeouts to match observed Apps Script response times before showing a load error.
+- Added a small yearly-trend status note when filtered trend data is still being filled, so users do not misread a one-year chart as final data.
+- Updated cache-busting asset query strings and the visible dashboard version badge to V2.22.
+- No Google Sheet, Apps Script, data structure, or privacy-scope changes in this version.
+
+## v2.21 live multi-year dashboard
 
 - Preserved the accepted V2.20 dashboard as `versions/v2.20/`.
 - Reworked the dashboard header into a two-line Thai title: the main public-health title is larger, and the LPA source subtitle is smaller.

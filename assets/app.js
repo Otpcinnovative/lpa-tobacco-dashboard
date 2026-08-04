@@ -64,6 +64,7 @@ const els = {
   loadingOverlay: document.getElementById("loadingOverlay"),
   loadingTitle: document.getElementById("loadingTitle"),
   loadingText: document.getElementById("loadingText"),
+  retryLoad: document.getElementById("retryLoad"),
 };
 
 const quickButtons = [...document.querySelectorAll(".quick-filter")];
@@ -102,12 +103,14 @@ if (fallbackRecords.length) {
   recordsByYear.set(state.year, fallbackRecords);
 }
 
-function setLoading(active, text = "กำลังเชื่อมข้อมูลจาก Google Sheets") {
+function setLoading(active, text = "กำลังเชื่อมข้อมูลจาก Google Sheets", options = {}) {
   document.body.classList.toggle("is-loading", active);
   if (!els.loadingOverlay) return;
   els.loadingOverlay.classList.toggle("is-visible", active);
   els.loadingOverlay.setAttribute("aria-hidden", active ? "false" : "true");
+  if (active && els.loadingTitle && !options.keepTitle) els.loadingTitle.textContent = "กำลังโหลดข้อมูล";
   if (els.loadingText) els.loadingText.textContent = text;
+  if (els.retryLoad) els.retryLoad.hidden = true;
 }
 
 function liveEndpoint(year = state.year) {
@@ -164,16 +167,16 @@ function loadJsonp(url, timeoutMs = 18000) {
 }
 
 async function fetchLivePayload(url, timeoutMs = 18000) {
-  const fetchRequest = (async () => {
+  try {
     const response = await Promise.race([
       fetch(url, { cache: "no-store" }),
       timeoutAfter(timeoutMs, "Fetch load timed out"),
     ]);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
-  })();
-  const jsonpRequest = loadJsonp(url, timeoutMs);
-  return Promise.any([fetchRequest, jsonpRequest]);
+  } catch (fetchError) {
+    return await loadJsonp(url, timeoutMs);
+  }
 }
 
 function applyLivePayload(payload, year) {
@@ -200,7 +203,8 @@ function showLoadError(year = state.year) {
   dataSourceMode = "error";
   dataSourceLabel = `ยังโหลดข้อมูลสดไม่ได้ · ปี ${year}`;
   if (els.loadingTitle) els.loadingTitle.textContent = "ยังโหลดข้อมูลไม่ได้";
-  setLoading(true, "ระบบกำลังรอข้อมูลจาก Google Sheets กรุณารีเฟรชอีกครั้งในสักครู่");
+  setLoading(true, "ระบบเชื่อมข้อมูลจาก Google Sheets ไม่สำเร็จ ลองโหลดใหม่อีกครั้งได้", { keepTitle: true });
+  if (els.retryLoad) els.retryLoad.hidden = false;
 }
 
 async function loadLiveRecords(year = state.year, options = {}) {
@@ -214,11 +218,11 @@ async function loadLiveRecords(year = state.year, options = {}) {
   }
   const url = liveEndpoint(year);
   if (!url) return false;
-  const attempts = Number(options.attempts || 2);
+  const attempts = Number(options.attempts || 1);
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const payload = await fetchLivePayload(url, attempt === 1 ? 16000 : 22000);
+      const payload = await fetchLivePayload(url, attempt === 1 ? 52000 : 60000);
       applyLivePayload(payload, year);
       return true;
     } catch (error) {
@@ -246,14 +250,7 @@ async function loadYearForTrend(year) {
   const url = liveEndpoint(numericYear);
   if (!url) return false;
   try {
-    let payload;
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      payload = await response.json();
-    } catch (fetchError) {
-      payload = await loadJsonp(url);
-    }
+    const payload = await fetchLivePayload(url, 52000);
     if (!payload || !Array.isArray(payload.records)) return false;
     recordsByYear.set(numericYear, payload.records);
     liveCachedYears.add(numericYear);
@@ -270,35 +267,26 @@ async function preloadTrendYears() {
   if (!availableYears.length) return;
   const yearsToLoad = availableYears.filter((year) => !recordsByYear.has(Number(year)));
   if (!yearsToLoad.length) return;
-  const preloadWithLimit = (year) => Promise.race([
-    loadYearForTrend(year),
-    new Promise((resolve) => window.setTimeout(() => resolve(false), 9000)),
-  ]);
-  await Promise.allSettled(yearsToLoad.map((year) => preloadWithLimit(year)));
-  render();
-}
-
-function waitForTrendYearsReady(maxWaitMs = 45000) {
-  if (!trendPreloadPromise) {
-    trendPreloadPromise = preloadTrendYears()
-      .catch((error) => console.warn("Cannot preload trend years.", error))
-      .finally(() => {
-        trendPreloadPromise = null;
-      });
+  for (const year of yearsToLoad) {
+    await loadYearForTrend(year);
+    render();
+    await sleep(600);
   }
-  return Promise.race([
-    trendPreloadPromise,
-    timeoutAfter(maxWaitMs, "Trend preload reached wait limit").catch((error) => {
-      console.warn(error.message);
-      return false;
-    }),
-  ]);
 }
 
-async function renderWithTrendReady() {
+function preloadTrendYearsInBackground() {
+  if (trendPreloadPromise) return trendPreloadPromise;
+  trendPreloadPromise = preloadTrendYears()
+    .catch((error) => console.warn("Cannot preload trend years.", error))
+    .finally(() => {
+      trendPreloadPromise = null;
+    });
+  return trendPreloadPromise;
+}
+
+function renderWithTrendPreload() {
   render();
-  await waitForTrendYearsReady();
-  render();
+  preloadTrendYearsInBackground();
 }
 
 function fmtInt(value) {
@@ -1065,6 +1053,10 @@ function updateTrendChartV2(items) {
   const cachedYears = availableYears.filter((year) => recordsByYear.has(Number(year))).sort((a, b) => Number(a) - Number(b));
   const hasActiveFilter = Boolean(state.region || state.province || state.district || state.type || state.search || state.quick !== "all");
   const useCountrySummary = !hasActiveFilter && countrySummaries.length;
+  const isTrendComplete = useCountrySummary || cachedYears.length >= availableYears.length;
+  const trendStatus = !isTrendComplete
+    ? `<p class="trend-load-note">กำลังเติมข้อมูลรายปี (${fmtInt(cachedYears.length)} จาก ${fmtInt(availableYears.length)} ปี) กราฟจะปรับอัตโนมัติเมื่อข้อมูลครบ</p>`
+    : "";
   const summaries = useCountrySummary
     ? [...countrySummaries].sort((a, b) => Number(a.year) - Number(b.year)).map((row) => ({
       year: row.year,
@@ -1120,6 +1112,7 @@ function updateTrendChartV2(items) {
       <text class="trend-label" x="${margin.left + 6}" y="30">ร้อยละ</text>
       <text class="trend-label" x="${width - margin.right}" y="30" text-anchor="end">${state.quick === "all" ? "ร้อยละผ่านรายปี" : "ร้อยละที่ต้องติดตามรายปี"}</text>
     </svg>
+    ${trendStatus}
   `;
 }
 
@@ -1326,7 +1319,7 @@ if (els.year) {
     els.pageSize.value = "10";
     if (recordsByYear.has(selectedYear) && liveCachedYears.has(selectedYear)) {
       await loadLiveRecords(selectedYear);
-      await renderWithTrendReady();
+      renderWithTrendPreload();
       return;
     }
     setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
@@ -1336,7 +1329,7 @@ if (els.year) {
       dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${selectedYear}`;
       const liveLoaded = await loadLiveRecords(selectedYear);
       if (liveLoaded || fallbackRecords.length) {
-        await renderWithTrendReady();
+        renderWithTrendPreload();
       } else {
         showLoadError(selectedYear);
         keepLoadingOverlay = true;
@@ -1396,6 +1389,12 @@ els.reset.addEventListener("click", () => {
   if (window.matchMedia("(max-width: 760px)").matches) setMobileFilterOpen(false);
 });
 
+if (els.retryLoad) {
+  els.retryLoad.addEventListener("click", () => {
+    initDashboard();
+  });
+}
+
 async function initDashboard() {
   setLoading(true, `กำลังโหลดข้อมูลปี ${state.year}`);
   let keepLoadingOverlay = false;
@@ -1404,7 +1403,7 @@ async function initDashboard() {
     if (liveLoaded) {
       state.page = 1;
       state.rankPage = 1;
-      await renderWithTrendReady();
+      renderWithTrendPreload();
     } else if (fallbackRecords.length) {
       render();
     } else {

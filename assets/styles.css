@@ -81,7 +81,7 @@ select {
 
 .header-logo {
   width: auto;
-  height: clamp(126px, 10vw, 176px);
+  height: clamp(150px, 12vw, 220px);
   object-fit: contain;
   flex: 0 0 auto;
   margin-top: 0;

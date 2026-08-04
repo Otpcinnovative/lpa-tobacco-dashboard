@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=2.24">
+  <link rel="stylesheet" href="assets/styles.css?v=3.0">
 </head>
 <body class="is-loading">
   <div class="app-shell">
@@ -16,7 +16,7 @@
         <h1>การดำเนินงานควบคุมผลิตภัณฑ์ยาสูบขององค์กรปกครองส่วนท้องถิ่น</h1>
         <p class="subtitle">จากข้อมูลผลการประเมินประสิทธิภาพองค์กรปกครองส่วนท้องถิ่น (Local Performance Assessment : LPA)</p>
       </div>
-      <img class="header-logo" src="assets/logo-otpc.jpg?v=2.24" alt="โลโก้กองงานคณะกรรมการควบคุมผลิตภัณฑ์ยาสูบ">
+      <img class="header-logo" src="assets/logo-otpc.jpg?v=3.0" alt="โลโก้กองงานคณะกรรมการควบคุมผลิตภัณฑ์ยาสูบ">
     </header>
 
     <section class="filter-band" aria-label="ตัวกรองข้อมูล">
@@ -103,6 +103,13 @@
           <strong>ตัดฐาน</strong>
           <span>ใช้กับด้านสถานศึกษาเมื่อ อปท. ไม่มีสถานศึกษา/โรงเรียน หรือไม่ต้องประเมิน จึงไม่นำเข้า denominator</span>
         </div>
+        <div class="definition-action">
+          <strong>รายละเอียดตัวชี้วัด</strong>
+          <a class="definition-link" href="https://drive.google.com/drive/folders/1PT0dfWKqrLW4yPtRN3UIi3d-HQgHyGNy?usp=sharing" target="_blank" rel="noopener noreferrer" aria-label="เปิดรายละเอียดตัวชี้วัดใน Google Drive">
+            <span class="definition-link-icon" aria-hidden="true"></span>
+            ดูรายละเอียดตัวชี้วัด
+          </a>
+        </div>
       </section>
 
       <div class="year-context-note" id="yearContextNote" hidden></div>
@@ -141,15 +148,29 @@
             </div>
             <span class="metric-pill" id="mapPill">76 จังหวัด</span>
           </div>
-          <div class="map-placeholder" role="img" aria-label="พื้นที่เตรียมไว้สำหรับแผนที่ประเทศไทยในอนาคต">
-            <div class="map-shape">
-              <span></span><span></span><span></span><span></span><span></span>
+          <div class="thai-map-layout">
+            <div class="thai-map-card">
+              <svg id="thaiMapSvg" class="thai-map-svg" viewBox="0 0 480 700" role="img" aria-label="แผนที่ประเทศไทยรายจังหวัด"></svg>
+              <div class="map-legend" id="mapLegend" aria-label="คำอธิบายระดับสี"></div>
             </div>
-            <div>
-              <strong>เตรียมพื้นที่สำหรับภาพแผนที่ประเทศไทยแสดงผลการประเมินรายจังหวัด</strong>
-              <p>ในเวอร์ชันถัดไปสามารถใส่ GeoJSON จังหวัดไทย และลงสีตามร้อยละผ่านหรือจำนวนพื้นที่ที่ต้องติดตาม</p>
+            <div class="map-insight">
+              <div>
+                <span id="mapModeLabel">ภาพรวม</span>
+                <strong id="mapFocusTitle">ประเทศไทย</strong>
+                <p id="mapFocusDetail">คลิกจังหวัดบนแผนที่เพื่อกรองข้อมูล หรือเลือกเขตสุขภาพจากตัวกรองด้านบนเพื่อขยายแผนที่ไปยังเขตนั้น</p>
+              </div>
+              <button id="mapResetView" class="map-reset" type="button">กลับทั้งประเทศ</button>
             </div>
           </div>
+        </article>
+
+        <article class="panel status-panel">
+          <div class="section-heading">
+            <div>
+              <h2>สัดส่วนสถานะรวม</h2>
+            </div>
+          </div>
+          <div id="statusChart" class="status-chart"></div>
         </article>
 
       </section>
@@ -186,25 +207,15 @@
           </div>
         </article>
 
-        <article class="panel">
+        <article class="panel district-panel" id="districtPanel">
           <div class="section-heading">
             <div>
-              <h2>สัดส่วนสถานะรวม</h2>
+              <h2>ผลการดำเนินงาน อปท. ด้านการควบคุมผลิตภัณฑ์ยาสูบรายอำเภอ</h2>
             </div>
+            <span class="metric-pill" id="districtCount">-</span>
           </div>
-          <div id="statusChart" class="status-chart"></div>
+          <div id="districtSummary" class="district-summary"></div>
         </article>
-      </section>
-
-      <section class="panel district-panel" id="districtPanel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">District Summary</p>
-            <h2>สรุประดับอำเภอในมุมมองที่เลือก</h2>
-          </div>
-          <span class="metric-pill" id="districtCount">-</span>
-        </div>
-        <div id="districtSummary" class="district-summary"></div>
       </section>
 
       <section class="panel table-panel">
@@ -264,10 +275,11 @@
     </div>
   </div>
 
-  <div class="version-badge" aria-label="เวอร์ชันแดชบอร์ด">V2.24</div>
+  <div class="version-badge" aria-label="เวอร์ชันแดชบอร์ด">V3.0</div>
 
-  <script src="assets/config.js?v=2.24"></script>
+  <script src="assets/config.js?v=3.0"></script>
   <script src="assets/lpa-data.js"></script>
-  <script src="assets/app.js?v=2.24"></script>
+  <script src="assets/thailand-province-paths.js"></script>
+  <script src="assets/app.js?v=3.0"></script>
 </body>
 </html>

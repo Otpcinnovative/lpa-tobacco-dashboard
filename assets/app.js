@@ -53,6 +53,12 @@ const els = {
   kpiFollowDetail: document.getElementById("kpiFollowDetail"),
   yearContextNote: document.getElementById("yearContextNote"),
   mapPill: document.getElementById("mapPill"),
+  thaiMapSvg: document.getElementById("thaiMapSvg"),
+  mapLegend: document.getElementById("mapLegend"),
+  mapModeLabel: document.getElementById("mapModeLabel"),
+  mapFocusTitle: document.getElementById("mapFocusTitle"),
+  mapFocusDetail: document.getElementById("mapFocusDetail"),
+  mapResetView: document.getElementById("mapResetView"),
   regionChart: document.getElementById("regionChart"),
   regionChartTitle: document.getElementById("regionChartTitle"),
   trendChart: document.getElementById("trendChart"),
@@ -86,6 +92,16 @@ const statusColors = {
   "ต้องติดตามด้าน อปท.": "var(--teal)",
   "ต้องติดตามทั้งสองด้าน": "var(--red)",
 };
+
+const mapMetricStyles = {
+  all: { label: "ร้อยละผ่านภาพรวม", light: "#dff5f1", dark: "#00a6a6", border: "var(--teal)" },
+  lpa: { label: "ร้อยละที่ต้องติดตามด้าน อปท.", light: "#e3f2fd", dark: "#1976d2", border: "var(--blue)" },
+  school: { label: "ร้อยละที่ต้องติดตามด้านสถานศึกษา", light: "#fff4d8", dark: "#f5b82e", border: "var(--yellow)" },
+  follow: { label: "ร้อยละที่ควรติดตามภาพรวม", light: "#fde9e7", dark: "#d94d45", border: "var(--red)" },
+};
+
+let mapBuilt = false;
+let provinceBBoxes = {};
 
 const state = {
   region: "",
@@ -417,6 +433,31 @@ function fmtRateNumber(value) {
   return new Intl.NumberFormat("th-TH", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value * 100);
 }
 
+function normalizeProvinceName(name) {
+  if (!name) return "";
+  return String(name).replace(/^จังหวัด/, "").replace(/\s+/g, "").trim();
+}
+
+function hexToRgb(hex) {
+  const clean = hex.replace("#", "");
+  return [
+    parseInt(clean.slice(0, 2), 16),
+    parseInt(clean.slice(2, 4), 16),
+    parseInt(clean.slice(4, 6), 16),
+  ];
+}
+
+function rgbToCss(parts) {
+  return `rgb(${parts.map((part) => Math.round(part)).join(",")})`;
+}
+
+function lerpColor(fromHex, toHex, amount) {
+  const from = hexToRgb(fromHex);
+  const to = hexToRgb(toHex);
+  const t = Math.max(0, Math.min(1, Number.isFinite(amount) ? amount : 0));
+  return rgbToCss(from.map((part, index) => part + (to[index] - part) * t));
+}
+
 function toRate(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : NaN;
@@ -577,6 +618,227 @@ function followBreakdown(items) {
 
 function schoolFollowBase(summary) {
   return summary.denominator45 + summary.missing45;
+}
+
+function currentMapMetric() {
+  return mapMetricStyles[state.quick] || mapMetricStyles.all;
+}
+
+function mapValueForSummary(summary) {
+  if (state.quick === "lpa") {
+    return {
+      value: summary.total ? summary.fail44 / summary.total * 100 : NaN,
+      note: `${fmtInt(summary.fail44)} ไม่ผ่าน จากทั้งหมด ${fmtInt(summary.total)} อปท.`,
+    };
+  }
+  if (state.quick === "school") {
+    const base = schoolFollowBase(summary);
+    const follow = summary.fail45 + summary.missing45;
+    return {
+      value: base ? follow / base * 100 : NaN,
+      note: `${fmtInt(follow)} ต้องติดตาม จากฐาน ${fmtInt(base)} แห่ง`,
+    };
+  }
+  if (state.quick === "follow") {
+    return {
+      value: summary.total ? summary.follow / summary.total * 100 : NaN,
+      note: `${fmtInt(summary.follow)} ควรติดตาม · ผ่านภาพรวม ${fmtInt(summary.passOverall)} แห่ง`,
+    };
+  }
+  return {
+    value: summary.rateOverall * 100,
+    note: `${fmtInt(summary.passOverall)} ผ่านภาพรวม จากทั้งหมด ${fmtInt(summary.total)} อปท.`,
+  };
+}
+
+function provinceMapStats(sourceRecords) {
+  const map = new Map();
+  sourceRecords.forEach((record) => {
+    const key = normalizeProvinceName(record.province);
+    if (!key) return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(record);
+  });
+  return new Map([...map.entries()].map(([province, rows]) => {
+    const summary = summarize(rows);
+    summary.rows = rows;
+    const metric = mapValueForSummary(summary);
+    return [province, { province, region: rows[0]?.region || "", ...summary, mapValue: metric.value, mapNote: metric.note }];
+  }));
+}
+
+function buildThailandMap() {
+  if (mapBuilt || !els.thaiMapSvg || !window.THAILAND_PROVINCE_PATHS) return;
+  const { paths = {}, nameMap = {}, viewBox = "0 0 480 700" } = window.THAILAND_PROVINCE_PATHS;
+  els.thaiMapSvg.innerHTML = "";
+  els.thaiMapSvg.setAttribute("viewBox", viewBox);
+  Object.entries(paths).forEach(([pathKey, d]) => {
+    const province = nameMap[pathKey] || pathKey;
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.dataset.pathKey = pathKey;
+    path.dataset.province = province;
+    path.addEventListener("click", () => {
+      const nextProvince = state.province === province ? "" : province;
+      state.region = nextProvince ? regionForProvince(nextProvince) : (state.region || regionForProvince(province));
+      state.province = nextProvince;
+      state.district = "";
+      state.search = "";
+      state.page = 1;
+      state.rankPage = 1;
+      if (els.search) els.search.value = "";
+      setMobileFilterOpen(false);
+      render();
+    });
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = province;
+    path.appendChild(title);
+    els.thaiMapSvg.appendChild(path);
+  });
+  const labelGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  labelGroup.id = "thaiMapLabelGroup";
+  els.thaiMapSvg.appendChild(labelGroup);
+  provinceBBoxes = {};
+  els.thaiMapSvg.querySelectorAll("path").forEach((path) => {
+    const box = path.getBBox();
+    provinceBBoxes[normalizeProvinceName(path.dataset.province)] = { x: box.x, y: box.y, width: box.width, height: box.height };
+  });
+  mapBuilt = true;
+}
+
+function unionBoxes(provinces) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  provinces.forEach((province) => {
+    const box = provinceBBoxes[province];
+    if (!box) return;
+    minX = Math.min(minX, box.x);
+    minY = Math.min(minY, box.y);
+    maxX = Math.max(maxX, box.x + box.width);
+    maxY = Math.max(maxY, box.y + box.height);
+  });
+  return Number.isFinite(minX) ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : null;
+}
+
+function setMapViewBox(targetBox) {
+  if (!els.thaiMapSvg) return 480;
+  if (!targetBox) {
+    els.thaiMapSvg.setAttribute("viewBox", "0 0 480 700");
+    return 480;
+  }
+  const pad = 0.18;
+  const padX = targetBox.width * pad;
+  const padY = targetBox.height * pad;
+  const width = targetBox.width + padX * 2;
+  const height = targetBox.height + padY * 2;
+  els.thaiMapSvg.setAttribute("viewBox", `${targetBox.x - padX} ${targetBox.y - padY} ${width} ${height}`);
+  return width;
+}
+
+function renderMapLabels(labelStats, viewWidth) {
+  const labelGroup = document.getElementById("thaiMapLabelGroup");
+  if (!labelGroup) return;
+  labelGroup.innerHTML = "";
+  const nameSize = Math.max(3.2, 11 * (viewWidth / 480));
+  const valueSize = Math.max(3.2, 12 * (viewWidth / 480));
+  labelStats.forEach((stat) => {
+    const box = provinceBBoxes[stat.province];
+    if (!box) return;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const name = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    name.setAttribute("class", "map-label");
+    name.setAttribute("x", cx);
+    name.setAttribute("y", cy - nameSize * 0.25);
+    name.setAttribute("font-size", nameSize);
+    name.textContent = stat.province;
+    const value = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    value.setAttribute("class", "map-label map-label-value");
+    value.setAttribute("x", cx);
+    value.setAttribute("y", cy + valueSize * 0.9);
+    value.setAttribute("font-size", valueSize);
+    value.textContent = Number.isFinite(stat.mapValue) ? `${stat.mapValue.toFixed(1)}%` : "-";
+    labelGroup.appendChild(name);
+    labelGroup.appendChild(value);
+  });
+}
+
+function updateThailandMap() {
+  if (!els.thaiMapSvg || !window.THAILAND_PROVINCE_PATHS) return;
+  buildThailandMap();
+  const focusRegion = state.region || regionForProvince(state.province);
+  const mapRecords = focusRegion
+    ? filterRecords(["region", "province", "quick"]).filter((record) => String(record.region) === String(focusRegion))
+    : filterRecords(["region", "province", "quick"]);
+  const stats = provinceMapStats(mapRecords);
+  const metric = currentMapMetric();
+  const values = [...stats.values()].map((item) => item.mapValue).filter(Number.isFinite);
+  const min = values.length ? Math.min(...values) : NaN;
+  const max = values.length ? Math.max(...values) : NaN;
+  const provinceRegions = new Map();
+  records.forEach((record) => {
+    const key = normalizeProvinceName(record.province);
+    if (key && record.region && !provinceRegions.has(key)) provinceRegions.set(key, String(record.region));
+  });
+
+  els.thaiMapSvg.querySelectorAll("path").forEach((path) => {
+    const province = normalizeProvinceName(path.dataset.province);
+    const stat = stats.get(province);
+    const inRegion = !focusRegion || provinceRegions.get(province) === String(focusRegion);
+    const selected = state.province && normalizeProvinceName(state.province) === province;
+    const t = Number.isFinite(stat?.mapValue) && Number.isFinite(min) && Number.isFinite(max) && max > min
+      ? (stat.mapValue - min) / (max - min)
+      : (Number.isFinite(stat?.mapValue) ? 0.55 : 0);
+    path.setAttribute("fill", stat ? lerpColor(metric.light, metric.dark, t) : "#e9eef1");
+    path.classList.toggle("is-muted", Boolean(focusRegion) && !inRegion);
+    path.classList.toggle("is-selected", Boolean(selected));
+    const title = path.querySelector("title") || document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = stat
+      ? `${stat.province} · ${metric.label} ${Number.isFinite(stat.mapValue) ? stat.mapValue.toFixed(1) + "%" : "-"} · ${stat.mapNote}`
+      : `${path.dataset.province} · ไม่มีข้อมูล`;
+    if (!path.contains(title)) path.appendChild(title);
+  });
+
+  const visibleStats = [...stats.values()].filter((item) => !focusRegion || String(item.region) === String(focusRegion));
+  const targetBox = state.province
+    ? provinceBBoxes[normalizeProvinceName(state.province)]
+    : (focusRegion ? unionBoxes(visibleStats.map((item) => item.province)) : null);
+  const viewWidth = setMapViewBox(targetBox);
+  const labelStats = state.province
+    ? visibleStats.filter((item) => item.province === normalizeProvinceName(state.province))
+    : (focusRegion ? visibleStats : []);
+  renderMapLabels(labelStats, viewWidth);
+
+  if (els.mapLegend) {
+    els.mapLegend.style.setProperty("--legend-from", metric.light);
+    els.mapLegend.style.setProperty("--legend-to", metric.dark);
+    els.mapLegend.innerHTML = `<span>${Number.isFinite(min) ? min.toFixed(1) : "-"}</span><div class="map-legend-bar"></div><span>${Number.isFinite(max) ? max.toFixed(1) : "-"}%</span>`;
+  }
+
+  if (els.mapModeLabel) els.mapModeLabel.textContent = metric.label;
+  if (els.mapFocusTitle) {
+    els.mapFocusTitle.textContent = state.province || (focusRegion ? `เขตสุขภาพที่ ${focusRegion}` : "ประเทศไทย");
+  }
+  if (els.mapFocusDetail) {
+    const selectedStat = state.province ? stats.get(normalizeProvinceName(state.province)) : summarize(mapRecords);
+    if (state.province && selectedStat) {
+      els.mapFocusDetail.textContent = `${selectedStat.mapNote} · อปท.ทั้งหมด ${fmtInt(selectedStat.total)} แห่ง`;
+    } else {
+      const countProvince = uniq(mapRecords.map((record) => record.province)).length;
+      els.mapFocusDetail.textContent = `แสดง ${fmtInt(countProvince)} จังหวัด · ${metric.label} ตามเงื่อนไขตัวกรองปัจจุบัน คลิกจังหวัดเพื่อกรองรายละเอียด`;
+    }
+  }
+  if (els.mapResetView) {
+    els.mapResetView.disabled = !state.region && !state.province && !state.district;
+  }
+  if (els.mapPill) {
+    els.mapPill.textContent = `${fmtInt(visibleStats.length || uniq(mapRecords.map((record) => record.province)).length)} จังหวัด`;
+  }
+  const border = metric.border || "var(--teal)";
+  const insight = document.querySelector(".map-insight");
+  if (insight) insight.style.borderLeftColor = border;
 }
 
 function scopeLabel() {
@@ -947,26 +1209,57 @@ function provinceStats(items) {
   });
 }
 
+function provinceRankLabel(s, pct, schoolFollow, schoolBase) {
+  const metric = state.rankMetric;
+  const view = state.rankView;
+  if (view === "best") {
+    if (metric === "rate44") {
+      return `ผ่านด้าน อปท. ${fmtPct(s.rate44)} · ไม่ผ่าน ${fmtInt(s.fail44)}`;
+    }
+    if (metric === "rate45") {
+      return `ผ่านด้านสถานศึกษา ${fmtPct(s.rate45)} · ต้องติดตาม ${fmtInt(schoolFollow)}`;
+    }
+    return `ผ่านภาพรวม ${fmtPct(s.rateOverall)} · ควรติดตาม ${fmtInt(s.follow)}`;
+  }
+  if (metric === "rate44") {
+    return `ไม่ผ่านด้าน อปท. ${fmtInt(s.fail44)} แห่ง (${fmtPct(pct)}) จาก ${fmtInt(s.total)} อปท.`;
+  }
+  if (metric === "rate45") {
+    return `ต้องติดตามด้านสถานศึกษา ${fmtInt(schoolFollow)} แห่ง (${fmtPct(pct)}) จากฐาน ${fmtInt(schoolBase)}`;
+  }
+  return `ควรติดตาม ${fmtInt(s.follow)} แห่ง (${fmtPct(pct)}) จาก ${fmtInt(s.total)} อปท.`;
+}
+
 function updateProvinceRanking(items) {
   const metric = state.rankMetric;
   const view = state.rankView;
   let stats = provinceStats(items).filter((s) => s.total > 0);
+  const schoolFollowCount = (s) => s.fail45 + s.missing45;
+  const schoolFollowRate = (s) => {
+    const base = schoolFollowBase(s);
+    return base ? schoolFollowCount(s) / base : NaN;
+  };
   const metricValue = (s) => {
-    if (metric === "rate44") return s.rate44;
-    if (metric === "rate45") return s.rate45;
-    return view === "best" ? s.rateOverall : s.total ? s.follow / s.total : NaN;
+    if (view === "best") {
+      if (metric === "rate44") return s.rate44;
+      if (metric === "rate45") return s.rate45;
+      return s.rateOverall;
+    }
+    if (metric === "rate44") return s.total ? s.fail44 / s.total : NaN;
+    if (metric === "rate45") return schoolFollowRate(s);
+    return s.total ? s.follow / s.total : NaN;
   };
   if (metric === "rate45") {
-    stats = stats.filter((s) => Number.isFinite(s.rate45));
+    stats = stats.filter((s) => Number.isFinite(metricValue(s)));
   }
   if (view === "best") {
     stats = stats.sort((a, b) => metricValue(b) - metricValue(a) || b.total - a.total);
   } else if (metric === "overall") {
     stats = stats.sort((a, b) => b.follow - a.follow || metricValue(b) - metricValue(a) || b.total - a.total);
   } else if (metric === "rate44") {
-    stats = stats.sort((a, b) => a.rate44 - b.rate44 || b.total - a.total);
+    stats = stats.sort((a, b) => b.fail44 - a.fail44 || metricValue(b) - metricValue(a) || b.total - a.total);
   } else if (metric === "rate45") {
-    stats = stats.sort((a, b) => a.rate45 - b.rate45 || b.total - a.total);
+    stats = stats.sort((a, b) => schoolFollowCount(b) - schoolFollowCount(a) || metricValue(b) - metricValue(a) || b.total - a.total);
   } else {
     stats = stats.sort((a, b) => b.follow - a.follow || b.total - a.total);
   }
@@ -981,7 +1274,10 @@ function updateProvinceRanking(items) {
 
   els.provinceRanking.innerHTML = shown.map((s, index) => {
     const pct = metricValue(s);
-    const label = view === "best"
+    const schoolBase = schoolFollowBase(s);
+    const schoolFollow = schoolFollowCount(s);
+    const pctWidth = Number.isFinite(pct) ? Math.max(2, Math.min(100, pct * 100)) : 0;
+    let label = view === "best"
       ? metric === "overall"
         ? `ผ่านภาพรวม ${fmtPct(s.rateOverall)} · ควรติดตาม ${fmtInt(s.follow)}`
         : metric === "rate44"
@@ -992,12 +1288,13 @@ function updateProvinceRanking(items) {
         : metric === "rate44"
           ? `ผ่านด้าน อปท. ${fmtPct(s.rate44)} · ไม่ผ่าน ${fmtInt(s.fail44)}`
           : `ผ่านด้านสถานศึกษา ${fmtPct(s.rate45)} · ไม่ผ่าน ${fmtInt(s.fail45)}`;
+    label = provinceRankLabel(s, pct, schoolFollow, schoolBase);
     return `
       <div class="rank-item ${view === "best" ? "rank-positive" : "rank-support"}">
         <span class="rank-no">${start + index + 1}</span>
         <div class="rank-title"><strong>${s.province}</strong><span>${fmtInt(s.total)} อปท.</span></div>
         <div class="rank-visual">
-          <div class="mini-track"><div class="mini-fill" style="width:${Math.max(2, Math.min(100, pct * 100))}%"></div></div>
+          <div class="mini-track"><div class="mini-fill" style="width:${pctWidth}%"></div></div>
           <div class="rank-value">${label}</div>
         </div>
       </div>
@@ -1283,7 +1580,15 @@ function updateStatusChartV2(items) {
 
 function updateDistrictSummary(items) {
   if (!state.province) {
-    els.districtPanel.style.display = "none";
+    els.districtPanel.style.display = "";
+    els.districtCount.textContent = "เลือกจังหวัด";
+    els.districtSummary.innerHTML = `
+      <div class="district-empty">
+        <span class="district-empty-icon" aria-hidden="true"></span>
+        <strong>เลือกจังหวัดเพื่อดูรายอำเภอ</strong>
+        <p>ใช้ตัวกรองจังหวัดด้านบน หรือคลิกจังหวัดบนแผนที่ประเทศไทย เพื่อแสดงผลการดำเนินงานของอำเภอในจังหวัดนั้น</p>
+      </div>
+    `;
     return;
   }
   els.districtPanel.style.display = "";
@@ -1393,6 +1698,7 @@ function render() {
   updateChartLegendsV2();
   updateRankMetricAvailability(items);
   updateKpis(items);
+  updateThailandMap();
   updateYearContext(items);
   updateRegionChartV2(regionItems, chartRegion);
   updateTrendChartV2(items);
@@ -1481,6 +1787,12 @@ if (els.mobileFilterToggle) {
 }
 if (els.mobileFilterBackdrop) {
   els.mobileFilterBackdrop.addEventListener("click", () => setMobileFilterOpen(false));
+}
+if (els.mapResetView) {
+  els.mapResetView.addEventListener("click", () => {
+    Object.assign(state, { region: "", province: "", district: "", page: 1, rankPage: 1 });
+    render();
+  });
 }
 els.rankPrev.addEventListener("click", () => {
   state.rankPage = Math.max(1, state.rankPage - 1);

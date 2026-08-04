@@ -1,5 +1,14 @@
 # Changelog
 
+## Current: v2.24 header and province ranking layout refinement
+
+- Preserved the accepted V2.23 dashboard as `versions/v2.23/`.
+- Adjusted the main dashboard title sizing on desktop so the Thai headline is more likely to stay on one line in wide screens and 90% browser zoom.
+- Kept the desktop-only one-line title behavior from affecting narrower screens; tablet and mobile can still wrap naturally.
+- Reworked the province performance panel so the title appears first and the two ranking filters sit underneath in a clean two-column row on desktop.
+- Updated cache-busting asset query strings and the visible dashboard version badge to V2.24.
+- No Google Sheet, Apps Script, loading logic, data structure, or privacy-scope changes in this version.
+
 ## Current: v2.23 live multi-year dashboard
 
 - Preserved the accepted V2.22 dashboard as `versions/v2.22/`.

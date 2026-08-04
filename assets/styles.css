@@ -52,8 +52,13 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 40px;
+  gap: 34px;
   padding: 58px 0 34px;
+}
+
+.brand-title {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .brand-title .subtitle {
@@ -66,11 +71,12 @@ select {
 }
 
 .brand-title h1 {
-  max-width: 1240px;
+  max-width: none;
   color: #000;
-  font-size: clamp(2rem, 2.7vw, 2.9rem);
+  font-size: clamp(1.9rem, 2vw, 2.25rem);
   line-height: 1.18;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .header-logo {
@@ -767,6 +773,24 @@ main > * {
   width: min(100%, 560px);
 }
 
+.province-ranking-panel .section-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  justify-content: start;
+}
+
+.province-ranking-panel .section-heading h2 {
+  max-width: 920px;
+  font-size: clamp(1.45rem, 1.9vw, 2.1rem);
+  line-height: 1.28;
+}
+
+.province-ranking-panel .rank-controls {
+  width: min(100%, 640px);
+}
+
 .rank-item {
   display: grid;
   grid-template-columns: 40px minmax(160px, 1fr) minmax(260px, 48%);
@@ -1020,6 +1044,10 @@ button:disabled {
 }
 
 @media (max-width: 1100px) {
+  .brand-title h1 {
+    white-space: normal;
+  }
+
   .filter-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }

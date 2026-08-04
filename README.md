@@ -4,7 +4,7 @@ Dashboard การดำเนินงานควบคุมผลิตภ�
 
 ## Current Version
 
-V2.23 live multi-year dashboard
+V2.24 header and province ranking layout refinement
 
 ## Data Source
 

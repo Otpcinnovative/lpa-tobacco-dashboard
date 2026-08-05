@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=3.0">
+  <link rel="stylesheet" href="assets/styles.css?v=3.3">
 </head>
 <body class="is-loading">
   <div class="app-shell">
@@ -53,7 +53,8 @@
         </label>
         <label class="search-field">
           <span>ค้นหา อปท.</span>
-          <input id="searchInput" type="search" placeholder="ชื่อ อปท. / อำเภอ / จังหวัด">
+          <input id="searchInput" name="lpa-org-search" type="search" placeholder="ค้นหาชื่อ อปท." autocomplete="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false" aria-controls="orgSearchSuggestions">
+          <div id="orgSearchSuggestions" class="search-suggestions" role="listbox" aria-label="ผลการค้นหาชื่อ อปท."></div>
         </label>
       </div>
       <div class="filter-actions">
@@ -150,6 +151,9 @@
           </div>
           <div class="thai-map-layout">
             <div class="thai-map-card">
+              <button id="mapResetView" class="map-reset map-reset-icon" type="button" aria-label="กลับภาพรวมแผนที่" title="กลับภาพรวมแผนที่">
+                <span aria-hidden="true">⌂</span>
+              </button>
               <svg id="thaiMapSvg" class="thai-map-svg" viewBox="0 0 480 700" role="img" aria-label="แผนที่ประเทศไทยรายจังหวัด"></svg>
               <div class="map-legend" id="mapLegend" aria-label="คำอธิบายระดับสี"></div>
             </div>
@@ -159,7 +163,6 @@
                 <strong id="mapFocusTitle">ประเทศไทย</strong>
                 <p id="mapFocusDetail">คลิกจังหวัดบนแผนที่เพื่อกรองข้อมูล หรือเลือกเขตสุขภาพจากตัวกรองด้านบนเพื่อขยายแผนที่ไปยังเขตนั้น</p>
               </div>
-              <button id="mapResetView" class="map-reset" type="button">กลับทั้งประเทศ</button>
             </div>
           </div>
         </article>
@@ -261,8 +264,8 @@
 
     <footer class="page-footer">
       <p>จัดทำโดย กองงานคณะกรรมการควบคุมผลิตภัณฑ์ยาสูบ กรมควบคุมโรค · โทร: 0 2195 5803</p>
-      <p id="updatedAtText">วันที่อัปเดตข้อมูล: -</p>
-      <p class="footer-live" id="footerDataStatus">เชื่อมข้อมูลสดจาก Google Sheets</p>
+      <p id="updatedAtText">วันที่อัปเดตข้อมูล: 5/08/2569</p>
+      <p class="footer-live" id="footerDataStatus" hidden></p>
     </footer>
   </div>
 
@@ -275,11 +278,14 @@
     </div>
   </div>
 
-  <div class="version-badge" aria-label="เวอร์ชันแดชบอร์ด">V3.0</div>
+  <div class="version-badge" id="versionBadge" aria-label="เวอร์ชันแดชบอร์ด" title="กำลังโหลดข้อมูล">
+    <span class="version-status-dot is-loading" id="versionStatusDot" aria-hidden="true"></span>
+    <span>V3.3</span>
+  </div>
 
   <script src="assets/config.js?v=3.0"></script>
   <script src="assets/lpa-data.js"></script>
   <script src="assets/thailand-province-paths.js"></script>
-  <script src="assets/app.js?v=3.0"></script>
+  <script src="assets/app.js?v=3.3"></script>
 </body>
 </html>

@@ -5,9 +5,12 @@ let dataSourceMode = "loading";
 let availableYears = [Number((window.LPA_CONFIG || {}).defaultYear || 2568)];
 let countrySummaries = [];
 let generatedAt = "";
+let dataRevision = "";
+const MANUAL_UPDATED_AT_LABEL = "5/08/2569";
 const recordsByYear = new Map();
 const liveCachedYears = new Set();
 let trendPreloadPromise = null;
+let trendPreloadRunId = 0;
 let browserCachePromise = null;
 const browserCachedYears = new Set();
 const BROWSER_CACHE_DB = "lpa-dashboard-cache";
@@ -20,6 +23,7 @@ const els = {
   district: document.getElementById("districtFilter"),
   type: document.getElementById("typeFilter"),
   search: document.getElementById("searchInput"),
+  searchSuggestions: document.getElementById("orgSearchSuggestions"),
   reset: document.getElementById("resetFilters"),
   mobileFilterToggle: document.getElementById("mobileFilterToggle"),
   mobileFilterSummary: document.getElementById("mobileFilterSummary"),
@@ -71,6 +75,8 @@ const els = {
   tableCount: document.getElementById("tableCount"),
   updatedAt: document.getElementById("updatedAtText"),
   footerDataStatus: document.getElementById("footerDataStatus"),
+  versionBadge: document.getElementById("versionBadge"),
+  versionStatusDot: document.getElementById("versionStatusDot"),
   loadingOverlay: document.getElementById("loadingOverlay"),
   loadingTitle: document.getElementById("loadingTitle"),
   loadingText: document.getElementById("loadingText"),
@@ -102,6 +108,7 @@ const mapMetricStyles = {
 
 let mapBuilt = false;
 let provinceBBoxes = {};
+let orgSearchSuggestions = [];
 
 const state = {
   region: "",
@@ -133,12 +140,59 @@ function setLoading(active, text = "กำลังเชื่อมข้อ�
   if (els.retryLoad) els.retryLoad.hidden = true;
 }
 
+function dataStatusMeta() {
+  if (dataSourceMode === "live") {
+    return { className: "is-live", text: dataSourceLabel || "โหลดข้อมูลสดจาก Google Sheets" };
+  }
+  if (dataSourceMode === "cache") {
+    return { className: "is-cache", text: dataSourceLabel || "แสดงข้อมูลจาก Cache ในเครื่อง" };
+  }
+  if (dataSourceMode === "checking") {
+    return { className: "is-checking", text: dataSourceLabel || "กำลังตรวจสอบข้อมูลล่าสุดจาก Google Sheets" };
+  }
+  if (dataSourceMode === "updating") {
+    return { className: "is-updating", text: dataSourceLabel || "พบข้อมูลใหม่ กำลังอัปเดตข้อมูลในเครื่อง" };
+  }
+  if (dataSourceMode === "fallback") {
+    return { className: "is-fallback", text: dataSourceLabel || "แสดงข้อมูลสำรอง" };
+  }
+  if (dataSourceMode === "error") {
+    return { className: "is-error", text: dataSourceLabel || "ยังโหลดข้อมูลสดไม่ได้" };
+  }
+  return { className: "is-loading", text: dataSourceLabel || "กำลังโหลดข้อมูล" };
+}
+
+function updateDataStatusIndicator() {
+  const meta = dataStatusMeta();
+  if (els.versionStatusDot) {
+    els.versionStatusDot.className = `version-status-dot ${meta.className}`;
+  }
+  if (els.versionBadge) {
+    const label = `V3.3 · ${meta.text}`;
+    els.versionBadge.setAttribute("title", meta.text);
+    els.versionBadge.setAttribute("aria-label", label);
+  }
+  if (els.footerDataStatus) {
+    els.footerDataStatus.hidden = true;
+    els.footerDataStatus.textContent = "";
+  }
+}
+
 function liveEndpoint(year = state.year) {
   const config = window.LPA_CONFIG || {};
   const baseUrl = (config.appsScriptUrl || "").trim();
   if (!baseUrl) return "";
   const url = new URL(baseUrl);
   url.searchParams.set("year", year || config.defaultYear || 2568);
+  return url.toString();
+}
+
+function liveMetaEndpoint() {
+  const config = window.LPA_CONFIG || {};
+  const baseUrl = (config.appsScriptUrl || "").trim();
+  if (!baseUrl) return "";
+  const url = new URL(baseUrl);
+  url.searchParams.set("meta", "1");
   return url.toString();
 }
 
@@ -211,6 +265,120 @@ async function writeBrowserCache(payload, year) {
   }
 }
 
+async function clearBrowserCache() {
+  const db = await openBrowserCache();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(BROWSER_CACHE_STORE, "readwrite");
+      tx.objectStore(BROWSER_CACHE_STORE).clear();
+      tx.oncomplete = () => {
+        browserCachedYears.clear();
+        resolve();
+      };
+      tx.onerror = () => {
+        console.warn("Cannot clear browser cache.", tx.error);
+        resolve();
+      };
+    } catch (error) {
+      console.warn("Cannot clear browser cache.", error);
+      resolve();
+    }
+  });
+}
+
+function payloadRevision(payload) {
+  if (!payload) return "";
+  return payload.dataRevision || payload.dataUpdatedAt || payload.generatedAt || "";
+}
+
+function normalizeYearList(years) {
+  return [...new Set((years || []).map(Number).filter((year) => Number.isFinite(year)))].sort((a, b) => a - b);
+}
+
+function sameYearList(a, b) {
+  const left = normalizeYearList(a);
+  const right = normalizeYearList(b);
+  return left.length === right.length && left.every((year, index) => year === right[index]);
+}
+
+async function fetchLiveMeta() {
+  const url = liveMetaEndpoint();
+  if (!url) return null;
+  try {
+    const payload = await fetchLivePayload(url, 18000);
+    return payload && payload.ok ? payload : null;
+  } catch (error) {
+    console.warn("Cannot load live LPA metadata.", error);
+    return null;
+  }
+}
+
+function applyLiveMeta(payload) {
+  if (!payload) return;
+  if (Array.isArray(payload.availableYears) && payload.availableYears.length) {
+    availableYears = normalizeYearList(payload.availableYears);
+  }
+  if (Array.isArray(payload.countrySummaries)) {
+    countrySummaries = payload.countrySummaries;
+  }
+  generatedAt = payload.generatedAt || generatedAt;
+  dataRevision = payloadRevision(payload) || dataRevision;
+}
+
+function isCachedPayloadStale(cachedPayload, metaPayload) {
+  if (!metaPayload) return false;
+  const liveRevision = payloadRevision(metaPayload);
+  const cachedRevision = payloadRevision(cachedPayload);
+  if (liveRevision && cachedRevision && liveRevision !== cachedRevision) return true;
+  if (liveRevision && !cachedRevision) return true;
+  return !sameYearList(cachedPayload?.availableYears || availableYears, metaPayload.availableYears || []);
+}
+
+async function syncLiveMetaAfterCache(year, cachedPayload) {
+  const previousMode = dataSourceMode;
+  const previousLabel = dataSourceLabel;
+  dataSourceMode = "checking";
+  dataSourceLabel = `กำลังตรวจสอบข้อมูลล่าสุดจาก Google Sheets · ปี ${year}`;
+  updateDataStatusIndicator();
+  const metaPayload = await fetchLiveMeta();
+  if (!metaPayload) {
+    dataSourceMode = previousMode;
+    dataSourceLabel = previousLabel;
+    updateDataStatusIndicator();
+    return;
+  }
+  const stale = isCachedPayloadStale(cachedPayload, metaPayload);
+  applyLiveMeta(metaPayload);
+  if (!stale) {
+    dataSourceMode = previousMode;
+    dataSourceLabel = previousLabel;
+    render();
+    return;
+  }
+
+  dataSourceMode = "updating";
+  dataSourceLabel = "พบข้อมูลใหม่จาก Google Sheets กำลังอัปเดตข้อมูลในเครื่อง";
+  updateDataStatusIndicator();
+  setLoading(true, "พบข้อมูลใหม่จาก Google Sheets กำลังอัปเดตข้อมูลในเครื่อง");
+  await clearBrowserCache();
+  recordsByYear.clear();
+  liveCachedYears.clear();
+  resetTrendPreloadQueue();
+  const targetYear = availableYears.includes(Number(year)) ? Number(year) : Math.max(...availableYears);
+  state.year = Number.isFinite(targetYear) ? targetYear : state.year;
+  if (els.year) els.year.value = String(state.year);
+  const liveLoaded = await loadLiveRecords(state.year, { forceLive: true, attempts: 2 });
+  setLoading(false);
+  if (liveLoaded) {
+    state.page = 1;
+    state.rankPage = 1;
+    renderWithTrendPreload();
+  } else {
+    render();
+  }
+}
+
 function applyCachedPayload(payload, year) {
   const numericYear = Number(payload.year || year);
   records = payload.records;
@@ -221,6 +389,7 @@ function applyCachedPayload(payload, year) {
   }
   if (Array.isArray(payload.countrySummaries)) countrySummaries = payload.countrySummaries;
   generatedAt = payload.generatedAt || generatedAt;
+  dataRevision = payloadRevision(payload) || dataRevision;
   state.year = numericYear;
   dataSourceMode = "cache";
   dataSourceLabel = `ข้อมูลที่เคยโหลดไว้ในเครื่อง · ปี ${state.year}`;
@@ -281,6 +450,7 @@ function applyLivePayload(payload, year, options = {}) {
     countrySummaries = payload.countrySummaries;
   }
   generatedAt = payload.generatedAt || generatedAt;
+  dataRevision = payloadRevision(payload) || dataRevision;
   if (options.applyCurrent !== false) {
     records = payload.records;
     state.year = payloadYear || Number((window.LPA_CONFIG || {}).defaultYear || 2568);
@@ -292,6 +462,7 @@ function applyLivePayload(payload, year, options = {}) {
 function showLoadError(year = state.year) {
   dataSourceMode = "error";
   dataSourceLabel = `ยังโหลดข้อมูลสดไม่ได้ · ปี ${year}`;
+  updateDataStatusIndicator();
   if (els.loadingTitle) els.loadingTitle.textContent = "ยังโหลดข้อมูลไม่ได้";
   setLoading(true, "ระบบเชื่อมข้อมูลจาก Google Sheets ไม่สำเร็จ ลองโหลดใหม่อีกครั้งได้", { keepTitle: true });
   if (els.retryLoad) els.retryLoad.hidden = false;
@@ -299,7 +470,7 @@ function showLoadError(year = state.year) {
 
 async function loadLiveRecords(year = state.year, options = {}) {
   const numericYear = Number(year);
-  if (recordsByYear.has(numericYear) && liveCachedYears.has(numericYear)) {
+  if (!options.forceLive && recordsByYear.has(numericYear) && liveCachedYears.has(numericYear)) {
     if (options.applyCurrent !== false) {
       records = recordsByYear.get(numericYear);
       state.year = numericYear;
@@ -346,6 +517,7 @@ async function loadYearForTrend(year) {
     browserCachedYears.add(numericYear);
     if (Array.isArray(cachedPayload.countrySummaries)) countrySummaries = cachedPayload.countrySummaries;
     if (cachedPayload.generatedAt) generatedAt = cachedPayload.generatedAt;
+    dataRevision = payloadRevision(cachedPayload) || dataRevision;
     return true;
   }
   const url = liveEndpoint(numericYear);
@@ -357,6 +529,7 @@ async function loadYearForTrend(year) {
     liveCachedYears.add(numericYear);
     if (Array.isArray(payload.countrySummaries)) countrySummaries = payload.countrySummaries;
     if (payload.generatedAt) generatedAt = payload.generatedAt;
+    dataRevision = payloadRevision(payload) || dataRevision;
     writeBrowserCache(payload, numericYear);
     return true;
   } catch (error) {
@@ -365,19 +538,27 @@ async function loadYearForTrend(year) {
   }
 }
 
-async function preloadTrendYears() {
+function resetTrendPreloadQueue() {
+  trendPreloadRunId += 1;
+  trendPreloadPromise = null;
+}
+
+async function preloadTrendYears(runId = trendPreloadRunId) {
   if (!availableYears.length) return;
   const yearsToLoad = availableYears
     .filter((year) => !recordsByYear.has(Number(year)))
     .sort((a, b) => Number(b) - Number(a));
   if (!yearsToLoad.length) return;
   for (const year of yearsToLoad) {
+    if (runId !== trendPreloadRunId) return;
     let loaded = false;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
+      if (runId !== trendPreloadRunId) return;
       loaded = await loadYearForTrend(year);
       if (loaded) break;
       await sleep(attempt === 1 ? 8000 : 20000);
     }
+    if (runId !== trendPreloadRunId) return;
     if (!loaded) console.warn(`Trend year ${year} is still unavailable after retry.`);
     render();
     await sleep(2500);
@@ -386,10 +567,11 @@ async function preloadTrendYears() {
 
 function preloadTrendYearsInBackground() {
   if (trendPreloadPromise) return trendPreloadPromise;
-  trendPreloadPromise = preloadTrendYears()
+  const runId = trendPreloadRunId;
+  trendPreloadPromise = preloadTrendYears(runId)
     .catch((error) => console.warn("Cannot preload trend years.", error))
     .finally(() => {
-      trendPreloadPromise = null;
+      if (runId === trendPreloadRunId) trendPreloadPromise = null;
     });
   return trendPreloadPromise;
 }
@@ -436,6 +618,15 @@ function fmtRateNumber(value) {
 function normalizeProvinceName(name) {
   if (!name) return "";
   return String(name).replace(/^จังหวัด/, "").replace(/\s+/g, "").trim();
+}
+
+function normalizeSearchText(value) {
+  return String(value ?? "")
+    .normalize("NFC")
+    .toLocaleLowerCase("th-TH")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function hexToRgb(hex) {
@@ -537,7 +728,8 @@ function refreshYearOptions() {
 
 function filterRecords(ignoreKey = "", sourceRecords = records) {
   const ignoreKeys = Array.isArray(ignoreKey) ? ignoreKey : [ignoreKey];
-  const query = state.search.trim().toLowerCase();
+  const query = normalizeSearchText(state.search);
+  const compactQuery = query.replace(/\s+/g, "");
   return sourceRecords.filter((record) => {
     if (!ignoreKeys.includes("region") && state.region && String(record.region) !== String(state.region)) return false;
     if (!ignoreKeys.includes("province") && state.province && record.province !== state.province) return false;
@@ -550,11 +742,79 @@ function filterRecords(ignoreKey = "", sourceRecords = records) {
       if (state.quick === "lpa" && overall !== "ต้องติดตามด้าน อปท." && overall !== "ต้องติดตามทั้งสองด้าน") return false;
     }
     if (!ignoreKeys.includes("search") && query) {
-      const haystack = `${record.name} ${record.district} ${record.province} ${record.type}`.toLowerCase();
-      if (!haystack.includes(query)) return false;
+      const haystack = normalizeSearchText(record.name);
+      const compactHaystack = haystack.replace(/\s+/g, "");
+      if (!haystack.includes(query) && (!compactQuery || !compactHaystack.includes(compactQuery))) return false;
     }
     return true;
   });
+}
+
+function hideOrgSearchSuggestions() {
+  orgSearchSuggestions = [];
+  if (els.searchSuggestions) {
+    els.searchSuggestions.innerHTML = "";
+    els.searchSuggestions.classList.remove("is-open");
+  }
+  if (els.search) els.search.setAttribute("aria-expanded", "false");
+}
+
+function renderOrgSearchSuggestions() {
+  if (!els.search || !els.searchSuggestions) return;
+  const query = normalizeSearchText(els.search.value);
+  const compactQuery = query.replace(/\s+/g, "");
+  if (!query) {
+    state.search = "";
+    hideOrgSearchSuggestions();
+    render();
+    return;
+  }
+  const baseItems = filterRecords("search");
+  const seen = new Set();
+  orgSearchSuggestions = [];
+  baseItems.forEach((record) => {
+    const name = normalizeSearchText(record.name);
+    const compactName = name.replace(/\s+/g, "");
+    if (!name.includes(query) && (!compactQuery || !compactName.includes(compactQuery))) return;
+    const key = `${record.province}|${record.district}|${record.name}|${record.type}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    orgSearchSuggestions.push(record);
+  });
+  orgSearchSuggestions = orgSearchSuggestions
+    .sort((a, b) => a.province.localeCompare(b.province, "th")
+      || a.district.localeCompare(b.district, "th")
+      || a.name.localeCompare(b.name, "th")
+      || a.type.localeCompare(b.type, "th"))
+    .slice(0, 8);
+
+  if (!orgSearchSuggestions.length) {
+    els.searchSuggestions.innerHTML = `<div class="search-suggestion-empty">ไม่พบชื่อ อปท. ที่ตรงกับคำค้น</div>`;
+  } else {
+    els.searchSuggestions.innerHTML = orgSearchSuggestions.map((record, index) => `
+      <button class="search-suggestion" type="button" role="option" data-index="${index}">
+        <strong>${record.name}</strong>
+        <span>${record.type} · ${record.district} · ${record.province}</span>
+      </button>
+    `).join("");
+  }
+  els.searchSuggestions.classList.add("is-open");
+  els.search.setAttribute("aria-expanded", "true");
+}
+
+function selectOrgSearchSuggestion(index = 0) {
+  const record = orgSearchSuggestions[index];
+  if (!record || !els.search) return;
+  state.region = String(record.region || regionForProvince(record.province));
+  state.province = record.province;
+  state.district = record.district;
+  state.search = record.name;
+  state.page = 1;
+  state.rankPage = 1;
+  els.search.value = record.name;
+  hideOrgSearchSuggestions();
+  setMobileFilterOpen(false);
+  render();
 }
 
 function refreshFilterOptions() {
@@ -687,6 +947,7 @@ function buildThailandMap() {
       state.page = 1;
       state.rankPage = 1;
       if (els.search) els.search.value = "";
+      hideOrgSearchSuggestions();
       setMobileFilterOpen(false);
       render();
     });
@@ -722,13 +983,16 @@ function unionBoxes(provinces) {
   return Number.isFinite(minX) ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : null;
 }
 
-function setMapViewBox(targetBox) {
+function setMapViewBox(targetBox, level = "country") {
   if (!els.thaiMapSvg) return 480;
+  els.thaiMapSvg.classList.toggle("is-country-view", level === "country");
+  els.thaiMapSvg.classList.toggle("is-region-view", level === "region");
+  els.thaiMapSvg.classList.toggle("is-province-view", level === "province");
   if (!targetBox) {
     els.thaiMapSvg.setAttribute("viewBox", "0 0 480 700");
     return 480;
   }
-  const pad = 0.18;
+  const pad = level === "region" ? 0.06 : 0.18;
   const padX = targetBox.width * pad;
   const padY = targetBox.height * pad;
   const width = targetBox.width + padX * 2;
@@ -805,7 +1069,8 @@ function updateThailandMap() {
   const targetBox = state.province
     ? provinceBBoxes[normalizeProvinceName(state.province)]
     : (focusRegion ? unionBoxes(visibleStats.map((item) => item.province)) : null);
-  const viewWidth = setMapViewBox(targetBox);
+  const mapLevel = state.province ? "province" : (focusRegion ? "region" : "country");
+  const viewWidth = setMapViewBox(targetBox, mapLevel);
   const labelStats = state.province
     ? visibleStats.filter((item) => item.province === normalizeProvinceName(state.province))
     : (focusRegion ? visibleStats : []);
@@ -832,6 +1097,9 @@ function updateThailandMap() {
   }
   if (els.mapResetView) {
     els.mapResetView.disabled = !state.region && !state.province && !state.district;
+    const label = state.province || state.district ? "กลับมุมมองเขตสุขภาพ" : "กลับภาพรวมประเทศไทย";
+    els.mapResetView.setAttribute("aria-label", label);
+    els.mapResetView.setAttribute("title", label);
   }
   if (els.mapPill) {
     els.mapPill.textContent = `${fmtInt(visibleStats.length || uniq(mapRecords.map((record) => record.province)).length)} จังหวัด`;
@@ -976,8 +1244,8 @@ function updateKpis(items) {
     setKpiCard(cards.watch, "อปท. ที่ควรติดตาม", fmtInt(s.follow), `ผ่านภาพรวม ${fmtInt(s.passOverall)} แห่ง${prev ? followDeltaHtml(s.follow, prev.follow, prev.year) : ""}<span class="kpi-note">${overallBasisText(items)}</span>`, "kpi-watch");
   }
   els.caption.textContent = "";
-  if (els.updatedAt) els.updatedAt.textContent = `วันที่อัปเดตข้อมูล: ${formatUpdatedAt(generatedAt)}`;
-  if (els.footerDataStatus) els.footerDataStatus.textContent = dataSourceLabel || "เชื่อมข้อมูลสดจาก Google Sheets";
+  if (els.updatedAt) els.updatedAt.textContent = `วันที่อัปเดตข้อมูล: ${MANUAL_UPDATED_AT_LABEL}`;
+  updateDataStatusIndicator();
   els.mapPill.textContent = `${fmtInt(uniq(items.map((r) => r.province)).length)} จังหวัด`;
 }
 
@@ -1636,20 +1904,22 @@ function updateTable(items) {
     "ต้องติดตามด้าน อปท.": 2,
     "ผ่านตามฐานประเมิน": 3,
   };
-  const usePrioritySort = Boolean(state.province || state.district);
+  const groupByAreaSort = Boolean(state.province || state.district);
   const sorted = [...items].sort((a, b) => {
     const aOverall = recordOverall(a);
     const bOverall = recordOverall(b);
-    if (usePrioritySort) {
-      return priority[aOverall] - priority[bOverall]
-        || a.province.localeCompare(b.province, "th")
+    if (groupByAreaSort) {
+      return a.province.localeCompare(b.province, "th")
         || a.district.localeCompare(b.district, "th")
-        || a.name.localeCompare(b.name, "th");
+        || priority[aOverall] - priority[bOverall]
+        || a.name.localeCompare(b.name, "th")
+        || a.type.localeCompare(b.type, "th");
     }
     return a.province.localeCompare(b.province, "th")
       || a.district.localeCompare(b.district, "th")
       || priority[aOverall] - priority[bOverall]
-      || a.name.localeCompare(b.name, "th");
+      || a.name.localeCompare(b.name, "th")
+      || a.type.localeCompare(b.type, "th");
   });
   const totalPages = Math.max(1, Math.ceil(sorted.length / state.pageSize));
   if (state.page > totalPages) state.page = totalPages;
@@ -1708,12 +1978,17 @@ function render() {
   updateTable(items);
 }
 
-function updateStateFromControls() {
+function updateStateFromControls(options = {}) {
+  const { clearSearch = false } = options;
   state.region = els.region.value;
   state.province = els.province.value;
   state.district = els.district.value;
   state.type = els.type.value;
-  state.search = els.search.value;
+  if (clearSearch) {
+    state.search = "";
+    if (els.search) els.search.value = "";
+    hideOrgSearchSuggestions();
+  }
   state.rankView = els.rankView ? els.rankView.value : "best";
   state.rankMetric = els.rankMetric.value;
   state.page = 1;
@@ -1721,14 +1996,18 @@ function updateStateFromControls() {
   render();
 }
 
-[els.region, els.province, els.district, els.type, els.rankView, els.rankMetric].filter(Boolean).forEach((el) => {
-  el.addEventListener("change", updateStateFromControls);
+[els.region, els.province, els.district, els.type].filter(Boolean).forEach((el) => {
+  el.addEventListener("change", () => updateStateFromControls({ clearSearch: true }));
+});
+[els.rankView, els.rankMetric].filter(Boolean).forEach((el) => {
+  el.addEventListener("change", () => updateStateFromControls());
 });
 if (els.year) {
   els.year.addEventListener("change", async () => {
     const selectedYear = Number(els.year.value);
     Object.assign(state, { year: selectedYear, region: "", province: "", district: "", type: "", search: "", rankView: "best", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
     els.search.value = "";
+    hideOrgSearchSuggestions();
     if (els.rankView) els.rankView.value = "best";
     els.rankMetric.value = "overall";
     els.pageSize.value = "10";
@@ -1741,7 +2020,13 @@ if (els.year) {
         : `ข้อมูลที่เคยโหลดไว้ในเครื่อง · ปี ${state.year}`;
       renderWithTrendPreload();
       if (!liveCachedYears.has(selectedYear)) {
-        refreshLiveYearInBackground(selectedYear);
+        syncLiveMetaAfterCache(selectedYear, {
+          year: selectedYear,
+          availableYears,
+          dataRevision,
+          generatedAt,
+          records: recordsByYear.get(selectedYear),
+        });
       }
       return;
     }
@@ -1749,7 +2034,7 @@ if (els.year) {
     if (cachedPayload) {
       applyCachedPayload(cachedPayload, selectedYear);
       renderWithTrendPreload();
-      refreshLiveYearInBackground(selectedYear);
+      syncLiveMetaAfterCache(selectedYear, cachedPayload);
       return;
     }
     setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
@@ -1769,12 +2054,39 @@ if (els.year) {
     }
   });
 }
-els.search.addEventListener("input", updateStateFromControls);
+if (els.search) {
+  els.search.addEventListener("input", renderOrgSearchSuggestions);
+  els.search.addEventListener("focus", () => {
+    if (normalizeSearchText(els.search.value)) renderOrgSearchSuggestions();
+  });
+  els.search.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      selectOrgSearchSuggestion(0);
+    }
+    if (event.key === "Escape") {
+      hideOrgSearchSuggestions();
+    }
+  });
+}
+if (els.searchSuggestions) {
+  els.searchSuggestions.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-index]");
+    if (!button) return;
+    selectOrgSearchSuggestion(Number(button.dataset.index));
+  });
+}
+document.addEventListener("pointerdown", (event) => {
+  if (!els.search || !els.searchSuggestions) return;
+  if (els.search.contains(event.target) || els.searchSuggestions.contains(event.target)) return;
+  hideOrgSearchSuggestions();
+});
 quickButtons.forEach((button) => {
   button.addEventListener("click", () => {
     state.quick = button.dataset.quick;
     state.page = 1;
     state.rankPage = 1;
+    hideOrgSearchSuggestions();
     render();
     if (window.matchMedia("(max-width: 760px)").matches) setMobileFilterOpen(false);
   });
@@ -1790,7 +2102,11 @@ if (els.mobileFilterBackdrop) {
 }
 if (els.mapResetView) {
   els.mapResetView.addEventListener("click", () => {
-    Object.assign(state, { region: "", province: "", district: "", page: 1, rankPage: 1 });
+    if (state.province || state.district) {
+      Object.assign(state, { province: "", district: "", page: 1, rankPage: 1 });
+    } else if (state.region) {
+      Object.assign(state, { region: "", province: "", district: "", page: 1, rankPage: 1 });
+    }
     render();
   });
 }
@@ -1818,6 +2134,7 @@ els.nextPage.addEventListener("click", () => {
 els.reset.addEventListener("click", () => {
   Object.assign(state, { region: "", province: "", district: "", type: "", search: "", rankView: "best", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
   els.search.value = "";
+  hideOrgSearchSuggestions();
   if (els.rankView) els.rankView.value = "best";
   els.rankMetric.value = "overall";
   els.pageSize.value = "10";
@@ -1842,7 +2159,7 @@ async function initDashboard() {
       state.rankPage = 1;
       renderWithTrendPreload();
       setLoading(false);
-      refreshLiveYearInBackground(state.year);
+      syncLiveMetaAfterCache(state.year, cachedPayload);
       return;
     }
     const liveLoaded = await loadLiveRecords();

@@ -1980,6 +1980,7 @@ button:disabled {
   box-shadow: 0 0 0 4px rgba(143, 182, 199, 0.18);
 }
 
+.version-status-dot.is-static,
 .version-status-dot.is-live {
   background: #10b981;
   box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.16);

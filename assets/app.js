@@ -8,6 +8,7 @@ let generatedAt = "";
 let dataRevision = "";
 const MANUAL_UPDATED_AT_LABEL = "5/08/2569";
 const recordsByYear = new Map();
+const staticCachedYears = new Set();
 const liveCachedYears = new Set();
 let trendPreloadPromise = null;
 let trendPreloadRunId = 0;
@@ -141,6 +142,9 @@ function setLoading(active, text = "กำลังเชื่อมข้อ�
 }
 
 function dataStatusMeta() {
+  if (dataSourceMode === "static") {
+    return { className: "is-static", text: dataSourceLabel || "โหลดข้อมูลจากไฟล์ข้อมูลบน GitHub Pages" };
+  }
   if (dataSourceMode === "live") {
     return { className: "is-live", text: dataSourceLabel || "โหลดข้อมูลสดจาก Google Sheets" };
   }
@@ -168,7 +172,7 @@ function updateDataStatusIndicator() {
     els.versionStatusDot.className = `version-status-dot ${meta.className}`;
   }
   if (els.versionBadge) {
-    const label = `V3.3 · ${meta.text}`;
+    const label = `V3.4 · ${meta.text}`;
     els.versionBadge.setAttribute("title", meta.text);
     els.versionBadge.setAttribute("aria-label", label);
   }
@@ -194,6 +198,22 @@ function liveMetaEndpoint() {
   const url = new URL(baseUrl);
   url.searchParams.set("meta", "1");
   return url.toString();
+}
+
+function staticDataEndpoint(fileName) {
+  const config = window.LPA_CONFIG || {};
+  const base = String(config.staticDataBase || "data").replace(/\/+$/, "");
+  const version = String(config.staticDataVersion || "").trim();
+  const url = `${base}/${fileName}`;
+  return version ? `${url}?v=${encodeURIComponent(version)}` : url;
+}
+
+function staticMetaEndpoint() {
+  return staticDataEndpoint("meta.json");
+}
+
+function staticYearEndpoint(year = state.year) {
+  return staticDataEndpoint(`${Number(year)}.json`);
 }
 
 function sleep(ms) {
@@ -349,8 +369,10 @@ async function syncLiveMetaAfterCache(year, cachedPayload) {
     return;
   }
   const stale = isCachedPayloadStale(cachedPayload, metaPayload);
+  const cachedSource = String(cachedPayload?.source || "");
+  const shouldRefreshStaticSource = cachedSource && cachedSource !== "Static JSON";
   applyLiveMeta(metaPayload);
-  if (!stale) {
+  if (!stale && !shouldRefreshStaticSource) {
     dataSourceMode = previousMode;
     dataSourceLabel = previousLabel;
     render();
@@ -371,6 +393,52 @@ async function syncLiveMetaAfterCache(year, cachedPayload) {
   const liveLoaded = await loadLiveRecords(state.year, { forceLive: true, attempts: 2 });
   setLoading(false);
   if (liveLoaded) {
+    state.page = 1;
+    state.rankPage = 1;
+    renderWithTrendPreload();
+  } else {
+    render();
+  }
+}
+
+async function syncStaticMetaAfterCache(year, cachedPayload) {
+  const previousMode = dataSourceMode;
+  const previousLabel = dataSourceLabel;
+  dataSourceMode = "checking";
+  dataSourceLabel = `กำลังตรวจสอบข้อมูลล่าสุดจากไฟล์บน GitHub Pages · ปี ${year}`;
+  updateDataStatusIndicator();
+  const metaPayload = await fetchStaticMeta();
+  if (!metaPayload) {
+    dataSourceMode = previousMode;
+    dataSourceLabel = previousLabel;
+    updateDataStatusIndicator();
+    syncLiveMetaAfterCache(year, cachedPayload);
+    return;
+  }
+  const stale = isCachedPayloadStale(cachedPayload, metaPayload);
+  applyLiveMeta(metaPayload);
+  if (!stale) {
+    dataSourceMode = previousMode;
+    dataSourceLabel = previousLabel;
+    render();
+    return;
+  }
+
+  dataSourceMode = "updating";
+  dataSourceLabel = "พบไฟล์ข้อมูลใหม่บน GitHub Pages กำลังอัปเดตข้อมูลในเครื่อง";
+  updateDataStatusIndicator();
+  setLoading(true, "พบไฟล์ข้อมูลใหม่บน GitHub Pages กำลังอัปเดตข้อมูลในเครื่อง");
+  await clearBrowserCache();
+  recordsByYear.clear();
+  staticCachedYears.clear();
+  liveCachedYears.clear();
+  resetTrendPreloadQueue();
+  const targetYear = availableYears.includes(Number(year)) ? Number(year) : Math.max(...availableYears);
+  state.year = Number.isFinite(targetYear) ? targetYear : state.year;
+  if (els.year) els.year.value = String(state.year);
+  const staticLoaded = await loadStaticRecords(state.year, { forceStatic: true, timeoutMs: 20000 });
+  setLoading(false);
+  if (staticLoaded) {
     state.page = 1;
     state.rankPage = 1;
     renderWithTrendPreload();
@@ -433,6 +501,70 @@ async function fetchLivePayload(url, timeoutMs = 18000) {
     return await response.json();
   } catch (fetchError) {
     return await loadJsonp(url, timeoutMs);
+  }
+}
+
+async function fetchStaticPayload(url, timeoutMs = 15000) {
+  const response = await Promise.race([
+    fetch(url, { cache: "default" }),
+    timeoutAfter(timeoutMs, "Static data load timed out"),
+  ]);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return await response.json();
+}
+
+async function fetchStaticMeta() {
+  try {
+    const payload = await fetchStaticPayload(staticMetaEndpoint(), 12000);
+    return payload && payload.ok ? payload : null;
+  } catch (error) {
+    console.warn("Cannot load static LPA metadata.", error);
+    return null;
+  }
+}
+
+function applyStaticPayload(payload, year, options = {}) {
+  if (!payload || !Array.isArray(payload.records)) {
+    throw new Error("Static payload has no records array");
+  }
+  const payloadYear = Number(payload.year || year);
+  recordsByYear.set(payloadYear, payload.records);
+  staticCachedYears.add(payloadYear);
+  if (Array.isArray(payload.availableYears) && payload.availableYears.length) {
+    availableYears = payload.availableYears.map(Number).filter((item) => Number.isFinite(item));
+  }
+  if (Array.isArray(payload.countrySummaries)) {
+    countrySummaries = payload.countrySummaries;
+  }
+  generatedAt = payload.generatedAt || generatedAt;
+  dataRevision = payloadRevision(payload) || dataRevision;
+  if (options.applyCurrent !== false) {
+    records = payload.records;
+    state.year = payloadYear || Number((window.LPA_CONFIG || {}).defaultYear || 2568);
+    dataSourceMode = "static";
+    dataSourceLabel = `โหลดข้อมูลจากไฟล์บน GitHub Pages · ปี ${state.year}`;
+  }
+}
+
+async function loadStaticRecords(year = state.year, options = {}) {
+  const numericYear = Number(year);
+  if (!options.forceStatic && recordsByYear.has(numericYear) && staticCachedYears.has(numericYear)) {
+    if (options.applyCurrent !== false) {
+      records = recordsByYear.get(numericYear);
+      state.year = numericYear;
+      dataSourceMode = "static";
+      dataSourceLabel = `โหลดข้อมูลจากไฟล์บน GitHub Pages · ปี ${state.year}`;
+    }
+    return true;
+  }
+  try {
+    const payload = await fetchStaticPayload(staticYearEndpoint(numericYear), options.timeoutMs || 18000);
+    applyStaticPayload(payload, numericYear, { applyCurrent: options.applyCurrent !== false });
+    writeBrowserCache(payload, numericYear);
+    return true;
+  } catch (error) {
+    console.warn(`Cannot load static LPA data for ${numericYear}.`, error);
+    return false;
   }
 }
 
@@ -520,6 +652,8 @@ async function loadYearForTrend(year) {
     dataRevision = payloadRevision(cachedPayload) || dataRevision;
     return true;
   }
+  const staticLoaded = await loadStaticRecords(numericYear, { applyCurrent: false, timeoutMs: 18000 });
+  if (staticLoaded) return true;
   const url = liveEndpoint(numericYear);
   if (!url) return false;
   try {
@@ -2014,13 +2148,15 @@ if (els.year) {
     if (recordsByYear.has(selectedYear)) {
       records = recordsByYear.get(selectedYear);
       state.year = selectedYear;
-      dataSourceMode = liveCachedYears.has(selectedYear) ? "live" : "cache";
-      dataSourceLabel = liveCachedYears.has(selectedYear)
-        ? `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`
-        : `ข้อมูลที่เคยโหลดไว้ในเครื่อง · ปี ${state.year}`;
+      dataSourceMode = staticCachedYears.has(selectedYear) ? "static" : (liveCachedYears.has(selectedYear) ? "live" : "cache");
+      dataSourceLabel = staticCachedYears.has(selectedYear)
+        ? `โหลดข้อมูลจากไฟล์บน GitHub Pages · ปี ${state.year}`
+        : (liveCachedYears.has(selectedYear)
+          ? `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`
+          : `ข้อมูลที่เคยโหลดไว้ในเครื่อง · ปี ${state.year}`);
       renderWithTrendPreload();
-      if (!liveCachedYears.has(selectedYear)) {
-        syncLiveMetaAfterCache(selectedYear, {
+      if (!staticCachedYears.has(selectedYear)) {
+        syncStaticMetaAfterCache(selectedYear, {
           year: selectedYear,
           availableYears,
           dataRevision,
@@ -2034,15 +2170,16 @@ if (els.year) {
     if (cachedPayload) {
       applyCachedPayload(cachedPayload, selectedYear);
       renderWithTrendPreload();
-      syncLiveMetaAfterCache(selectedYear, cachedPayload);
+      syncStaticMetaAfterCache(selectedYear, cachedPayload);
       return;
     }
     setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
     let keepLoadingOverlay = false;
     try {
       dataSourceMode = "loading";
-      dataSourceLabel = `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${selectedYear}`;
-      const liveLoaded = await loadLiveRecords(selectedYear);
+      dataSourceLabel = `กำลังโหลดไฟล์ข้อมูลบน GitHub Pages · ปี ${selectedYear}`;
+      const staticLoaded = await loadStaticRecords(selectedYear, { timeoutMs: 20000 });
+      const liveLoaded = staticLoaded ? true : await loadLiveRecords(selectedYear);
       if (liveLoaded || fallbackRecords.length) {
         renderWithTrendPreload();
       } else {
@@ -2159,11 +2296,12 @@ async function initDashboard() {
       state.rankPage = 1;
       renderWithTrendPreload();
       setLoading(false);
-      syncLiveMetaAfterCache(state.year, cachedPayload);
+      syncStaticMetaAfterCache(state.year, cachedPayload);
       return;
     }
-    const liveLoaded = await loadLiveRecords();
-    if (liveLoaded) {
+    const staticLoaded = await loadStaticRecords(state.year, { timeoutMs: 20000 });
+    const loaded = staticLoaded ? true : await loadLiveRecords();
+    if (loaded) {
       state.page = 1;
       state.rankPage = 1;
       renderWithTrendPreload();

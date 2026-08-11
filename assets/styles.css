@@ -284,7 +284,7 @@ button:focus {
 
 .filter-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: center;
   margin-top: 12px;
@@ -328,6 +328,26 @@ button {
 
 .reset-button:hover {
   background: #0b437f;
+}
+
+.export-button {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  background: #f7fcfd;
+  border-color: #bfe1ec;
+  color: #095e8f;
+}
+
+.export-button:hover {
+  background: #edf9fc;
+  border-color: #78bfd4;
+}
+
+.export-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 button:hover {
@@ -1486,7 +1506,7 @@ button:disabled {
   }
 
   .filter-actions {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
   .quick-filter-group {
@@ -1494,7 +1514,8 @@ button:disabled {
   }
 
   .quick-filter,
-  #resetFilters {
+    #resetFilters,
+    #exportExcel {
     padding-inline: 12px;
     font-size: 0.94rem;
   }
@@ -1837,7 +1858,8 @@ button:disabled {
     white-space: nowrap;
   }
 
-  #resetFilters {
+  #resetFilters,
+  #exportExcel {
     justify-self: stretch;
     min-height: 30px;
     padding: 5px 10px;

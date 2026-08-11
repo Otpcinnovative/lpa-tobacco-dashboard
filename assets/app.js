@@ -8,6 +8,7 @@ let generatedAt = "";
 let dataRevision = "";
 const MANUAL_UPDATED_AT_LABEL = "5/08/2569";
 const recordsByYear = new Map();
+const exportDetailRowsByYear = new Map();
 const staticCachedYears = new Set();
 const liveCachedYears = new Set();
 let trendPreloadPromise = null;
@@ -78,6 +79,7 @@ const els = {
   footerDataStatus: document.getElementById("footerDataStatus"),
   versionBadge: document.getElementById("versionBadge"),
   versionStatusDot: document.getElementById("versionStatusDot"),
+  exportExcel: document.getElementById("exportExcel"),
   loadingOverlay: document.getElementById("loadingOverlay"),
   loadingTitle: document.getElementById("loadingTitle"),
   loadingText: document.getElementById("loadingText"),
@@ -172,7 +174,7 @@ function updateDataStatusIndicator() {
     els.versionStatusDot.className = `version-status-dot ${meta.className}`;
   }
   if (els.versionBadge) {
-    const label = `V3.4 · ${meta.text}`;
+    const label = `V4.1.4 · ${meta.text}`;
     els.versionBadge.setAttribute("title", meta.text);
     els.versionBadge.setAttribute("aria-label", label);
   }
@@ -214,6 +216,14 @@ function staticMetaEndpoint() {
 
 function staticYearEndpoint(year = state.year) {
   return staticDataEndpoint(`${Number(year)}.json`);
+}
+
+function staticExportYearEndpoint(year = state.year) {
+  return staticDataEndpoint(`export/${Number(year)}.json`);
+}
+
+function staticExportYearScriptEndpoint(year = state.year) {
+  return staticDataEndpoint(`export/${Number(year)}.js`);
 }
 
 function sleep(ms) {
@@ -2090,6 +2100,728 @@ function updateTable(items) {
   `).join("") || `<tr><td colspan="6">ไม่มีข้อมูลในเงื่อนไขนี้</td></tr>`;
 }
 
+function excelEscape(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function excelSheetName(name) {
+  return String(name || "Sheet")
+    .replace(/[\\/?*[\]:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 31) || "Sheet";
+}
+
+function exportFileSafe(value) {
+  return String(value || "")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function exportDateLabel() {
+  return new Intl.DateTimeFormat("th-TH", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date());
+}
+
+function exportRecordKey(record) {
+  return [
+    record.year || state.year,
+    record.region,
+    record.province,
+    record.district,
+    record.type,
+    record.name,
+  ].map((item) => normalizeSearchText(item).replace(/\s+/g, "")).join("|");
+}
+
+function exportDetailRecordKey(record) {
+  return [
+    record.year || state.year,
+    record.region,
+    record.province,
+    record.district,
+    record.type,
+    record.name,
+  ].map((item) => normalizeSearchText(item).replace(/\s+/g, "")).join("|");
+}
+
+function exportLooseRecordKey(record) {
+  return [
+    record.year || state.year,
+    record.region,
+    record.province,
+    record.district,
+    record.name,
+  ].map((item) => normalizeSearchText(item).replace(/\s+/g, "")).join("|");
+}
+
+function loadExportDetailScript(year) {
+  const numericYear = Number(year);
+  window.LPA_EXPORT_DATA = window.LPA_EXPORT_DATA || {};
+  if (window.LPA_EXPORT_DATA[numericYear]) {
+    return Promise.resolve(window.LPA_EXPORT_DATA[numericYear]);
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = staticExportYearScriptEndpoint(numericYear);
+    script.async = true;
+    script.onload = () => {
+      const payload = window.LPA_EXPORT_DATA && window.LPA_EXPORT_DATA[numericYear];
+      if (payload) {
+        resolve(payload);
+      } else {
+        reject(new Error(`Export detail script loaded without payload for ${numericYear}`));
+      }
+    };
+    script.onerror = () => reject(new Error(`Cannot load export detail script for ${numericYear}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function loadExportDetailRows(year = state.year) {
+  const numericYear = Number(year);
+  if (exportDetailRowsByYear.has(numericYear)) return exportDetailRowsByYear.get(numericYear);
+  let payload = window.LPA_EXPORT_DATA && window.LPA_EXPORT_DATA[numericYear];
+  if (!payload) {
+    try {
+      payload = await fetchStaticPayload(staticExportYearEndpoint(numericYear), 30000);
+    } catch (error) {
+      payload = await loadExportDetailScript(numericYear);
+    }
+  }
+  const rows = payload && Array.isArray(payload.records) ? payload.records : [];
+  exportDetailRowsByYear.set(numericYear, rows);
+  return rows;
+}
+
+function matchExportDetailRows(items, detailRows) {
+  const exactMap = new Map(detailRows.map((record) => [exportDetailRecordKey(record), record]));
+  const looseMap = new Map();
+  detailRows.forEach((record) => {
+    const key = exportLooseRecordKey(record);
+    if (!looseMap.has(key)) looseMap.set(key, record);
+  });
+  return items
+    .map((item) => exactMap.get(exportRecordKey(item)) || looseMap.get(exportLooseRecordKey(item)))
+    .filter(Boolean)
+    .sort((a, b) => a.province.localeCompare(b.province, "th")
+      || a.district.localeCompare(b.district, "th")
+      || a.name.localeCompare(b.name, "th")
+      || a.type.localeCompare(b.type, "th"));
+}
+
+function quickFilterLabel(value = state.quick) {
+  const labels = {
+    all: "ทั้งหมด",
+    lpa: "ติดตามด้าน อปท.",
+    school: "ติดตามด้านสถานศึกษา",
+    follow: "เฉพาะที่ควรติดตาม",
+  };
+  return labels[value] || "ทั้งหมด";
+}
+
+function exportScopeLabel() {
+  const parts = [`ปี ${state.year}`];
+  if (state.region) parts.push(`เขตสุขภาพที่ ${state.region}`);
+  if (state.province) parts.push(state.province);
+  if (state.district) parts.push(state.district);
+  if (state.type) parts.push(state.type);
+  if (state.search) parts.push(`อปท. ${state.search}`);
+  if (state.quick !== "all") parts.push(quickFilterLabel());
+  return parts.join(" · ");
+}
+
+function sortedDetailRows(items) {
+  const priority = {
+    "ต้องติดตามทั้งสองด้าน": 0,
+    "ต้องติดตามด้านสถานศึกษา": 1,
+    "ต้องติดตามด้าน อปท.": 2,
+    "ผ่านตามฐานประเมิน": 3,
+  };
+  return [...items].sort((a, b) => {
+    const aOverall = recordOverall(a);
+    const bOverall = recordOverall(b);
+    return a.province.localeCompare(b.province, "th")
+      || a.district.localeCompare(b.district, "th")
+      || (priority[aOverall] ?? 9) - (priority[bOverall] ?? 9)
+      || a.name.localeCompare(b.name, "th")
+      || a.type.localeCompare(b.type, "th");
+  });
+}
+
+function exportAreaGroups(items) {
+  if (state.district) {
+    return {
+      level: "ประเภท อปท.",
+      rows: groupBy(items, "type").map(([label, rows]) => ({ label, rows })),
+      sort: (a, b) => a.label.localeCompare(b.label, "th"),
+    };
+  }
+  if (state.province) {
+    return {
+      level: "อำเภอ",
+      rows: groupBy(items, "district").map(([label, rows]) => ({ label, rows })),
+      sort: (a, b) => a.label.localeCompare(b.label, "th"),
+    };
+  }
+  if (state.region) {
+    return {
+      level: "จังหวัด",
+      rows: groupBy(items, "province").map(([label, rows]) => ({ label, rows })),
+      sort: (a, b) => a.label.localeCompare(b.label, "th"),
+    };
+  }
+  return {
+    level: "เขตสุขภาพ",
+    rows: groupBy(items, "region").map(([label, rows]) => ({ label: `เขตสุขภาพที่ ${label}`, rows, sortValue: Number(label) })),
+    sort: (a, b) => (a.sortValue || 0) - (b.sortValue || 0),
+  };
+}
+
+function summaryExportRows(items) {
+  const groups = exportAreaGroups(items);
+  return groups.rows
+    .sort(groups.sort)
+    .map((group) => {
+      const summary = summarize(group.rows);
+      return [
+        groups.level,
+        group.label,
+        summary.total,
+        summary.pass44,
+        summary.fail44,
+        fmtPctPlain(summary.rate44),
+        summary.denominator45,
+        summary.pass45,
+        summary.fail45,
+        summary.cut45,
+        summary.missing45,
+        fmtPctPlain(summary.rate45),
+        summary.passOverall,
+        summary.follow,
+        fmtPctPlain(summary.rateOverall),
+      ];
+    });
+}
+
+function xlsxColumnName(index) {
+  let name = "";
+  let value = index + 1;
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    value = Math.floor((value - 1) / 26);
+  }
+  return name;
+}
+
+function xlsxCellRef(rowIndex, colIndex) {
+  return `${xlsxColumnName(colIndex)}${rowIndex + 1}`;
+}
+
+function xlsxRange(rowCount, colCount) {
+  return `A1:${xlsxCellRef(Math.max(rowCount - 1, 0), Math.max(colCount - 1, 0))}`;
+}
+
+function xlsxCell(value, rowIndex, colIndex, styleId = 0) {
+  const text = excelEscape(value);
+  const style = styleId ? ` s="${styleId}"` : "";
+  return `<c r="${xlsxCellRef(rowIndex, colIndex)}" t="inlineStr"${style}><is><t>${text}</t></is></c>`;
+}
+
+function xlsxTextWidth(value) {
+  const text = String(value ?? "");
+  if (!text) return 0;
+  return [...text].reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 1.7 : 1), 0);
+}
+
+function xlsxColumnWidth(sheet, colIndex) {
+  const samples = [sheet.headers[colIndex], ...sheet.rows.slice(0, 350).map((row) => row[colIndex])];
+  const maxWidth = samples.reduce((max, value) => Math.max(max, xlsxTextWidth(value)), 0);
+  return Math.max(9, Math.min(46, Math.ceil(maxWidth + 2)));
+}
+
+function xlsxSheetXml(sheet) {
+  const rows = [sheet.headers, ...sheet.rows];
+  const colCount = Math.max(sheet.headers.length, ...sheet.rows.map((row) => row.length), 1);
+  const sheetRows = rows.map((row, rowIndex) => {
+    const cells = Array.from({ length: colCount }, (_, colIndex) => xlsxCell(row[colIndex] ?? "", rowIndex, colIndex, rowIndex === 0 ? 1 : 0)).join("");
+    return `<row r="${rowIndex + 1}">${cells}</row>`;
+  }).join("");
+  const cols = Array.from({ length: colCount }, (_, index) => {
+    const width = xlsxColumnWidth(sheet, index);
+    return `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`;
+  }).join("");
+  const range = xlsxRange(rows.length, colCount);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <dimension ref="${range}"/>
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  <cols>${cols}</cols>
+  <sheetData>${sheetRows}</sheetData>
+  <autoFilter ref="${range}"/>
+</worksheet>`;
+}
+
+function xlsxContentTypes(sheets) {
+  const sheetOverrides = sheets.map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  ${sheetOverrides}
+</Types>`;
+}
+
+function xlsxRootRels() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`;
+}
+
+function xlsxWorkbookRels(sheets) {
+  const sheetRels = sheets.map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${sheetRels}
+  <Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+}
+
+function xlsxWorkbookXml(sheets) {
+  const sheetNodes = sheets.map((sheet, index) => `<sheet name="${excelEscape(excelSheetName(sheet.name))}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>${sheetNodes}</sheets>
+</workbook>`;
+}
+
+function xlsxStylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2">
+    <font><sz val="11"/><name val="Tahoma"/></font>
+    <font><b/><sz val="11"/><color rgb="FF0F2E48"/><name val="Tahoma"/></font>
+  </fonts>
+  <fills count="3">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFEAF7F8"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border><left style="thin"><color rgb="FFCFE0EC"/></left><right style="thin"><color rgb="FFCFE0EC"/></right><top style="thin"><color rgb="FFCFE0EC"/></top><bottom style="thin"><color rgb="FFCFE0EC"/></bottom><diagonal/></border>
+  </borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="2">
+    <xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyNumberFormat="1"/>
+    <xf numFmtId="49" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1"/>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+  <dxfs count="0"/>
+  <tableStyles count="0" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16"/>
+</styleSheet>`;
+}
+
+function xlsxCoreXml() {
+  const created = new Date().toISOString();
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:creator>OTPC LPA Dashboard</dc:creator>
+  <cp:lastModifiedBy>OTPC LPA Dashboard</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified>
+</cp:coreProperties>`;
+}
+
+function xlsxAppXml(sheets) {
+  const names = sheets.map((sheet) => `<vt:lpstr>${excelEscape(excelSheetName(sheet.name))}</vt:lpstr>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>LPA Tobacco Control Dashboard</Application>
+  <HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant><vt:variant><vt:i4>${sheets.length}</vt:i4></vt:variant></vt:vector></HeadingPairs>
+  <TitlesOfParts><vt:vector size="${sheets.length}" baseType="lpstr">${names}</vt:vector></TitlesOfParts>
+</Properties>`;
+}
+
+function crc32(bytes) {
+  let crc = -1;
+  for (let index = 0; index < bytes.length; index += 1) {
+    crc ^= bytes[index];
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+function zipDateParts(date = new Date()) {
+  const year = Math.max(date.getFullYear(), 1980);
+  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { dosTime, dosDate };
+}
+
+function uint16(value) {
+  return [value & 0xff, (value >>> 8) & 0xff];
+}
+
+function uint32(value) {
+  return [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff];
+}
+
+function bytesFromString(value) {
+  return new TextEncoder().encode(String(value));
+}
+
+function bytesFromArray(values) {
+  return new Uint8Array(values);
+}
+
+function buildZip(files) {
+  const chunks = [];
+  const centralDirectory = [];
+  let offset = 0;
+  const { dosTime, dosDate } = zipDateParts();
+  files.forEach((file) => {
+    const nameBytes = bytesFromString(file.name);
+    const dataBytes = file.bytes instanceof Uint8Array ? file.bytes : bytesFromString(file.content);
+    const crc = crc32(dataBytes);
+    const localHeader = bytesFromArray([
+      ...uint32(0x04034b50),
+      ...uint16(20),
+      ...uint16(0x0800),
+      ...uint16(0),
+      ...uint16(dosTime),
+      ...uint16(dosDate),
+      ...uint32(crc),
+      ...uint32(dataBytes.length),
+      ...uint32(dataBytes.length),
+      ...uint16(nameBytes.length),
+      ...uint16(0),
+    ]);
+    chunks.push(localHeader, nameBytes, dataBytes);
+    centralDirectory.push({ nameBytes, crc, size: dataBytes.length, offset });
+    offset += localHeader.length + nameBytes.length + dataBytes.length;
+  });
+  const centralStart = offset;
+  centralDirectory.forEach((entry) => {
+    const header = bytesFromArray([
+      ...uint32(0x02014b50),
+      ...uint16(20),
+      ...uint16(20),
+      ...uint16(0x0800),
+      ...uint16(0),
+      ...uint16(dosTime),
+      ...uint16(dosDate),
+      ...uint32(entry.crc),
+      ...uint32(entry.size),
+      ...uint32(entry.size),
+      ...uint16(entry.nameBytes.length),
+      ...uint16(0),
+      ...uint16(0),
+      ...uint16(0),
+      ...uint16(0),
+      ...uint32(0),
+      ...uint32(entry.offset),
+    ]);
+    chunks.push(header, entry.nameBytes);
+    offset += header.length + entry.nameBytes.length;
+  });
+  const centralSize = offset - centralStart;
+  const end = bytesFromArray([
+    ...uint32(0x06054b50),
+    ...uint16(0),
+    ...uint16(0),
+    ...uint16(files.length),
+    ...uint16(files.length),
+    ...uint32(centralSize),
+    ...uint32(centralStart),
+    ...uint16(0),
+  ]);
+  chunks.push(end);
+  return new Blob(chunks, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+function buildExcelWorkbook(sheets) {
+  const files = [
+    { name: "[Content_Types].xml", content: xlsxContentTypes(sheets) },
+    { name: "_rels/.rels", content: xlsxRootRels() },
+    { name: "docProps/core.xml", content: xlsxCoreXml() },
+    { name: "docProps/app.xml", content: xlsxAppXml(sheets) },
+    { name: "xl/workbook.xml", content: xlsxWorkbookXml(sheets) },
+    { name: "xl/_rels/workbook.xml.rels", content: xlsxWorkbookRels(sheets) },
+    { name: "xl/styles.xml", content: xlsxStylesXml() },
+    ...sheets.map((sheet, index) => ({ name: `xl/worksheets/sheet${index + 1}.xml`, content: xlsxSheetXml(sheet) })),
+  ];
+  return buildZip(files);
+}
+
+function exportValue(value) {
+  const text = String(value ?? "").trim();
+  return text || "-";
+}
+
+function hasAnyExportItem(row) {
+  return [...(row.lpaItems || []), ...(row.schoolItems || [])].some((item) => String(item || "").trim());
+}
+
+function exportItemValue(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "-";
+  if (text === "1") return "ดำเนินการ";
+  if (text === "0") return "ยังไม่พบการดำเนินงาน";
+  return text;
+}
+
+function itemNeedsImprovement(value) {
+  return String(value ?? "").trim() === "0";
+}
+
+function improvementSummary(items, sideLabel) {
+  const values = items || [];
+  const hasValues = values.some((item) => String(item || "").trim());
+  if (!hasValues) return "ไม่มีข้อมูลรายข้อในฐานกลาง";
+  const missingItems = values
+    .map((item, index) => itemNeedsImprovement(item) ? `ข้อที่ ${index + 1}` : "")
+    .filter(Boolean);
+  if (!missingItems.length) return "ดำเนินการครบทุกข้อที่มีข้อมูล";
+  return `${sideLabel}: ควรพัฒนา ${missingItems.join(", ")}`;
+}
+
+function detailedIndicatorHeaders() {
+  return [
+    "ปี",
+    "เขตสุขภาพ",
+    "จังหวัด",
+    "อำเภอ",
+    "ประเภท อปท.",
+    "ชื่อ อปท.",
+    "รหัส อปท.",
+    "เลขตัวชี้วัดต้นฉบับด้าน อปท.",
+    "จำนวนรายการที่ดำเนินการด้าน อปท.",
+    "คะแนนรวมด้าน อปท.",
+    "สถานะด้าน อปท.",
+    "รายการด้าน อปท. ที่ควรพัฒนา",
+    ...Array.from({ length: 8 }, (_, index) => `รายการย่อยด้าน อปท. ข้อที่ ${index + 1}`),
+    "เลขตัวชี้วัดต้นฉบับด้านสถานศึกษา",
+    "ระยะของข้อมูลด้านสถานศึกษา",
+    "ใช้เปรียบเทียบด้านสถานศึกษาข้ามปี",
+    "จำนวนรายการที่ดำเนินการด้านสถานศึกษา",
+    "คะแนนรวมด้านสถานศึกษา",
+    "สถานะด้านสถานศึกษา",
+    "ตัดฐานด้านสถานศึกษา",
+    "ไม่มีข้อมูลด้านสถานศึกษา",
+    "รายการด้านสถานศึกษา ที่ควรพัฒนา",
+    ...Array.from({ length: 7 }, (_, index) => `รายการย่อยด้านสถานศึกษา ข้อที่ ${index + 1}`),
+    "หมายเหตุด้านสถานศึกษา",
+    "สถานะรวม",
+    "ข้อสังเกตคุณภาพข้อมูล",
+  ];
+}
+
+function detailedIndicatorRows(detailRows) {
+  return detailRows.map((record) => [
+    record.year || state.year,
+    record.region ? `เขตสุขภาพที่ ${record.region}` : "-",
+    exportValue(record.province),
+    exportValue(record.district),
+    exportValue(record.type),
+    exportValue(record.name),
+    exportValue(record.orgCode),
+    exportValue(record.lpaIndicator),
+    exportValue(record.lpaActivityCount),
+    exportValue(record.lpaScore),
+    exportValue(record.lpaStatus),
+    improvementSummary(record.lpaItems, "ด้าน อปท."),
+    ...Array.from({ length: 8 }, (_, index) => exportItemValue(record.lpaItems?.[index])),
+    exportValue(record.schoolIndicator),
+    exportValue(record.schoolPhase),
+    exportValue(record.schoolComparable),
+    exportValue(record.schoolActivityCount),
+    exportValue(record.schoolScore),
+    exportValue(record.schoolStatus),
+    exportValue(record.schoolCutbase),
+    exportValue(record.schoolMissing),
+    improvementSummary(record.schoolItems, "ด้านสถานศึกษา"),
+    ...Array.from({ length: 7 }, (_, index) => exportItemValue(record.schoolItems?.[index])),
+    exportValue(record.schoolNote),
+    exportValue(record.overallStatus),
+    exportValue(record.dataQuality),
+  ]);
+}
+
+function expectsDetailedExport(year = state.year) {
+  const numericYear = Number(year);
+  return numericYear >= 2565 && numericYear <= 2567;
+}
+
+function exportDetailWarningRow(message) {
+  return detailedIndicatorHeaders().map((_, index) => {
+    if (index === 0) return state.year;
+    if (index === 5) return message;
+    return "-";
+  });
+}
+
+function buildExportSheets(items, detailedItems = [], options = {}) {
+  const detailItems = sortedDetailRows(items);
+  const summary = summarize(items);
+  let detailedRows = detailedIndicatorRows(detailedItems);
+  if (!detailedRows.length && options.detailLoadWarning) {
+    detailedRows = [exportDetailWarningRow(options.detailLoadWarning)];
+  }
+  const hasDetailedItems = detailedItems.some(hasAnyExportItem);
+  const detailInfo = options.detailLoadWarning
+    || (hasDetailedItems
+      ? "มีข้อมูลรายข้อในไฟล์ Export"
+      : "ไม่มีข้อมูลรายข้อในฐานกลางของปี/เงื่อนไขนี้ แสดงเฉพาะคะแนนรวมและสถานะ");
+  const contextRows = [
+    ["วันที่ Export", exportDateLabel()],
+    ["ปีข้อมูล", state.year],
+    ["ขอบเขตข้อมูล", exportScopeLabel()],
+    ["เขตสุขภาพ", state.region ? `เขตสุขภาพที่ ${state.region}` : "ทุกเขตสุขภาพ"],
+    ["จังหวัด", state.province || "ทุกจังหวัด"],
+    ["อำเภอ", state.district || "ทุกอำเภอ"],
+    ["ประเภท อปท.", state.type || "ทุกประเภท"],
+    ["ตัวกรองเร็ว", quickFilterLabel()],
+    ["ชื่อ อปท. ที่ค้นหา", state.search || "-"],
+    ["จำนวนแถวที่ส่งออก", items.length],
+    ["ร้อยละผ่านด้าน อปท.", fmtPctPlain(summary.rate44)],
+    ["ร้อยละผ่านด้านสถานศึกษา", fmtPctPlain(summary.rate45)],
+    ["ร้อยละผ่านภาพรวม", fmtPctPlain(summary.rateOverall)],
+    ["ข้อมูลรายข้อ", detailInfo],
+  ];
+  const detailRows = detailItems.map((record) => [
+    state.year,
+    `เขตสุขภาพที่ ${record.region}`,
+    record.province,
+    record.district,
+    record.type,
+    record.name,
+    record.s44 === "" ? "-" : record.s44,
+    record.st44 || "-",
+    record.schoolComparable === "ใช่" ? (record.s45 === "" ? "-" : record.s45) : "-",
+    schoolStatusLabel(record),
+    recordOverall(record),
+  ]);
+  const dictionaryRows = [
+    ["ผ่าน", "ได้คะแนนตั้งแต่ 3 คะแนนขึ้นไป"],
+    ["ไม่ผ่าน", "ได้คะแนนต่ำกว่า 3 คะแนน หรือไม่ดำเนินการตามเกณฑ์"],
+    ["ตัดฐาน", "ใช้กับด้านสถานศึกษาเมื่อ อปท. ไม่มีสถานศึกษา/โรงเรียน หรือไม่ต้องประเมิน จึงไม่นำเข้า denominator"],
+    ["ไม่มีข้อมูล", "ไม่มีค่าหรือข้อมูลไม่เพียงพอสำหรับสรุปผล"],
+    ["ปี 2565-2566", "ข้อมูลด้านสถานศึกษาไม่ใช้เปรียบเทียบแนวโน้มข้ามปีตามข้อกำหนดของฐานข้อมูล"],
+    ["รายการย่อยด้าน อปท. ข้อที่ 1-8", "ค่ารายข้อจากฐานข้อมูล clean ใช้ดูว่า อปท. ดำเนินการข้อใดแล้วหรือยังไม่ดำเนินการข้อใด"],
+    ["รายการย่อยด้านสถานศึกษา ข้อที่ 1-7", "ค่ารายข้อจากฐานข้อมูล clean ใช้ดูรายละเอียดการดำเนินการด้านสถานศึกษาเมื่อปีนั้นมีข้อมูลเปรียบเทียบ"],
+    ["คำว่า ดำเนินการ ในรายการย่อย", "หมายถึงฐานข้อมูลรายข้อระบุว่าพื้นที่มีการดำเนินงานในข้อนั้น"],
+    ["คำว่า ยังไม่พบการดำเนินงาน ในรายการย่อย", "หมายถึงฐานข้อมูลรายข้อระบุว่ายังไม่พบการดำเนินงานในข้อนั้น จึงเป็นข้อที่สามารถใช้วางแผนพัฒนาคะแนนได้"],
+    ["รายการที่ควรพัฒนา", "สรุปจากรายการย่อยที่ยังไม่พบการดำเนินงาน เพื่อให้ผู้ใช้เห็นทันทีว่าควรกลับไปดูหรือพัฒนาข้อใด"],
+    ["ช่องว่างหรือเครื่องหมาย - ในรายการย่อย", "หมายถึงฐานกลางของปีนั้นยังไม่มีข้อมูลรายข้อในระดับที่ใช้ Export ได้ ไม่ได้แปลว่าไม่ดำเนินการเสมอไป"],
+    ["หมายเหตุ", "ไฟล์นี้เป็น V4.1.4 ส่งออกจากข้อมูลตามตัวกรองที่ผู้ใช้เลือกใน Dashboard"],
+  ];
+  return [
+    {
+      name: "สรุปเงื่อนไข",
+      headers: ["รายการ", "ค่า"],
+      rows: contextRows,
+    },
+    {
+      name: "สรุปพื้นที่",
+      headers: ["ระดับ", "พื้นที่", "จำนวน อปท.", "ผ่านด้าน อปท.", "ไม่ผ่านด้าน อปท.", "ร้อยละผ่านด้าน อปท.", "ฐานสถานศึกษา", "ผ่านสถานศึกษา", "ไม่ผ่านสถานศึกษา", "ตัดฐาน", "ไม่มีข้อมูล", "ร้อยละผ่านสถานศึกษา", "ผ่านภาพรวม", "ควรติดตาม", "ร้อยละผ่านภาพรวม"],
+      rows: summaryExportRows(items),
+    },
+    {
+      name: "รายละเอียด อปท.",
+      headers: ["ปี", "เขตสุขภาพ", "จังหวัด", "อำเภอ", "ประเภท อปท.", "ชื่อ อปท.", "คะแนนด้าน อปท.", "สถานะด้าน อปท.", "คะแนนด้านสถานศึกษา", "สถานะด้านสถานศึกษา", "สถานะรวม"],
+      rows: detailRows,
+    },
+    {
+      name: "รายละเอียดตัวชี้วัดย่อย",
+      headers: detailedIndicatorHeaders(),
+      rows: detailedRows,
+    },
+    {
+      name: "คำอธิบายข้อมูล",
+      headers: ["คำ", "ความหมาย"],
+      rows: dictionaryRows,
+    },
+  ];
+}
+
+function downloadExcelWorkbook(items, detailedItems = [], options = {}) {
+  const sheets = buildExportSheets(items, detailedItems, options);
+  const blob = buildExcelWorkbook(sheets);
+  const scope = exportFileSafe(exportScopeLabel()) || `ปี_${state.year}`;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `LPA_Export_${scope}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function handleExportExcel() {
+  const items = filterRecords();
+  if (!items.length) {
+    window.alert("ไม่มีข้อมูลในเงื่อนไขที่เลือก จึงไม่สามารถ Export ได้");
+    return;
+  }
+  const originalText = els.exportExcel ? els.exportExcel.innerHTML : "";
+  if (els.exportExcel) {
+    els.exportExcel.disabled = true;
+    els.exportExcel.innerHTML = `<span aria-hidden="true">…</span> กำลัง Export`;
+  }
+  setLoading(true, "กำลังโหลดข้อมูลรายละเอียดเพื่อสร้างไฟล์ Excel");
+  let detailedItems = [];
+  let detailLoadWarning = "";
+  try {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    try {
+      const detailRows = await loadExportDetailRows(state.year);
+      detailedItems = matchExportDetailRows(items, detailRows);
+      if (expectsDetailedExport(state.year) && !detailRows.length) {
+        detailLoadWarning = "ไม่สามารถโหลดข้อมูลรายข้อของปีนี้ได้ในการ Export ครั้งนี้";
+      } else if (expectsDetailedExport(state.year) && detailRows.length && !detailedItems.length) {
+        detailLoadWarning = "พบไฟล์ข้อมูลรายข้อ แต่ไม่สามารถจับคู่กับข้อมูลตามตัวกรองปัจจุบันได้";
+      }
+    } catch (error) {
+      console.warn("Cannot load detailed export rows.", error);
+      if (expectsDetailedExport(state.year)) {
+        detailLoadWarning = "ไม่สามารถโหลดข้อมูลรายข้อของปีนี้ได้ในการ Export ครั้งนี้";
+      }
+    }
+    setLoading(true, "กำลังสร้างไฟล์ Excel ตามตัวกรองปัจจุบัน");
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    downloadExcelWorkbook(items, detailedItems, { detailLoadWarning });
+  } finally {
+    setLoading(false);
+    if (els.exportExcel) {
+      els.exportExcel.disabled = false;
+      els.exportExcel.innerHTML = originalText;
+    }
+  }
+}
+
 function render() {
   refreshFilterOptions();
   const items = filterRecords();
@@ -2278,6 +3010,10 @@ els.reset.addEventListener("click", () => {
   render();
   if (window.matchMedia("(max-width: 760px)").matches) setMobileFilterOpen(false);
 });
+
+if (els.exportExcel) {
+  els.exportExcel.addEventListener("click", handleExportExcel);
+}
 
 if (els.retryLoad) {
   els.retryLoad.addEventListener("click", () => {

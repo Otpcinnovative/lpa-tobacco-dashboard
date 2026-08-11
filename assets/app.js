@@ -7,6 +7,7 @@ let countrySummaries = [];
 let generatedAt = "";
 let dataRevision = "";
 const MANUAL_UPDATED_AT_LABEL = "5/08/2569";
+const INDICATOR_DETAIL_DRIVE_URL = "https://drive.google.com/drive/folders/1PT0dfWKqrLW4yPtRN3UIi3d-HQgHyGNy?usp=sharing";
 const recordsByYear = new Map();
 const exportDetailRowsByYear = new Map();
 const staticCachedYears = new Set();
@@ -174,7 +175,7 @@ function updateDataStatusIndicator() {
     els.versionStatusDot.className = `version-status-dot ${meta.className}`;
   }
   if (els.versionBadge) {
-    const label = `V4.1.4 · ${meta.text}`;
+    const label = `V4.1.5 · ${meta.text}`;
     els.versionBadge.setAttribute("title", meta.text);
     els.versionBadge.setAttribute("aria-label", label);
   }
@@ -2347,30 +2348,47 @@ function xlsxTextWidth(value) {
 }
 
 function xlsxColumnWidth(sheet, colIndex) {
+  const explicitWidth = Array.isArray(sheet.columnWidths) ? Number(sheet.columnWidths[colIndex]) : NaN;
+  if (Number.isFinite(explicitWidth) && explicitWidth > 0) return explicitWidth;
   const samples = [sheet.headers[colIndex], ...sheet.rows.slice(0, 350).map((row) => row[colIndex])];
   const maxWidth = samples.reduce((max, value) => Math.max(max, xlsxTextWidth(value)), 0);
   return Math.max(9, Math.min(46, Math.ceil(maxWidth + 2)));
 }
 
 function xlsxSheetXml(sheet) {
-  const rows = [sheet.headers, ...sheet.rows];
-  const colCount = Math.max(sheet.headers.length, ...sheet.rows.map((row) => row.length), 1);
+  const noteRows = Array.isArray(sheet.noteRows) ? sheet.noteRows : [];
+  const rows = [...noteRows, sheet.headers, ...sheet.rows];
+  const headerRowIndex = noteRows.length;
+  const colCount = Math.max(sheet.headers.length, ...noteRows.map((row) => row.length), ...sheet.rows.map((row) => row.length), 1);
   const sheetRows = rows.map((row, rowIndex) => {
-    const cells = Array.from({ length: colCount }, (_, colIndex) => xlsxCell(row[colIndex] ?? "", rowIndex, colIndex, rowIndex === 0 ? 1 : 0)).join("");
-    return `<row r="${rowIndex + 1}">${cells}</row>`;
+    const isNoteRow = rowIndex < noteRows.length;
+    const noteRowHeight = Number(sheet.noteRowHeight) || 92;
+    const rowAttrs = isNoteRow ? ` r="${rowIndex + 1}" ht="${noteRowHeight}" customHeight="1"` : ` r="${rowIndex + 1}"`;
+    const cellCount = isNoteRow ? row.length : colCount;
+    const cells = Array.from({ length: cellCount }, (_, colIndex) => {
+      const styleId = isNoteRow ? 2 : (rowIndex === headerRowIndex ? 1 : 0);
+      return xlsxCell(row[colIndex] ?? "", rowIndex, colIndex, styleId);
+    }).join("");
+    return `<row${rowAttrs}>${cells}</row>`;
   }).join("");
   const cols = Array.from({ length: colCount }, (_, index) => {
     const width = xlsxColumnWidth(sheet, index);
     return `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`;
   }).join("");
   const range = xlsxRange(rows.length, colCount);
+  const filterRange = `${xlsxCellRef(headerRowIndex, 0)}:${xlsxCellRef(Math.max(rows.length - 1, headerRowIndex), Math.max(colCount - 1, 0))}`;
+  const freezeRows = headerRowIndex + 1;
+  const topLeftCell = `A${freezeRows + 1}`;
+  const sheetView = sheet.freezeHeader === false
+    ? `<sheetViews><sheetView workbookViewId="0"/></sheetViews>`
+    : `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${freezeRows}" topLeftCell="${topLeftCell}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <dimension ref="${range}"/>
-  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  ${sheetView}
   <cols>${cols}</cols>
   <sheetData>${sheetRows}</sheetData>
-  <autoFilter ref="${range}"/>
+  <autoFilter ref="${filterRange}"/>
 </worksheet>`;
 }
 
@@ -2417,23 +2435,26 @@ function xlsxWorkbookXml(sheets) {
 function xlsxStylesXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="2">
+  <fonts count="3">
     <font><sz val="11"/><name val="Tahoma"/></font>
     <font><b/><sz val="11"/><color rgb="FF0F2E48"/><name val="Tahoma"/></font>
+    <font><b/><sz val="9"/><color rgb="FFFFFFFF"/><name val="Tahoma"/></font>
   </fonts>
-  <fills count="3">
+  <fills count="4">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFEAF7F8"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFD93025"/><bgColor indexed="64"/></patternFill></fill>
   </fills>
   <borders count="2">
     <border><left/><right/><top/><bottom/><diagonal/></border>
     <border><left style="thin"><color rgb="FFCFE0EC"/></left><right style="thin"><color rgb="FFCFE0EC"/></right><top style="thin"><color rgb="FFCFE0EC"/></top><bottom style="thin"><color rgb="FFCFE0EC"/></bottom><diagonal/></border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="2">
+  <cellXfs count="3">
     <xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyNumberFormat="1"/>
     <xf numFmtId="49" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1"/>
+    <xf numFmtId="49" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1" applyNumberFormat="1"><alignment wrapText="1" vertical="center"/></xf>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
   <dxfs count="0"/>
@@ -2735,7 +2756,7 @@ function buildExportSheets(items, detailedItems = [], options = {}) {
     ["คำว่า ยังไม่พบการดำเนินงาน ในรายการย่อย", "หมายถึงฐานข้อมูลรายข้อระบุว่ายังไม่พบการดำเนินงานในข้อนั้น จึงเป็นข้อที่สามารถใช้วางแผนพัฒนาคะแนนได้"],
     ["รายการที่ควรพัฒนา", "สรุปจากรายการย่อยที่ยังไม่พบการดำเนินงาน เพื่อให้ผู้ใช้เห็นทันทีว่าควรกลับไปดูหรือพัฒนาข้อใด"],
     ["ช่องว่างหรือเครื่องหมาย - ในรายการย่อย", "หมายถึงฐานกลางของปีนั้นยังไม่มีข้อมูลรายข้อในระดับที่ใช้ Export ได้ ไม่ได้แปลว่าไม่ดำเนินการเสมอไป"],
-    ["หมายเหตุ", "ไฟล์นี้เป็น V4.1.4 ส่งออกจากข้อมูลตามตัวกรองที่ผู้ใช้เลือกใน Dashboard"],
+    ["หมายเหตุ", "ไฟล์นี้เป็น V4.1.5 ส่งออกจากข้อมูลตามตัวกรองที่ผู้ใช้เลือกใน Dashboard"],
   ];
   return [
     {
@@ -2755,6 +2776,14 @@ function buildExportSheets(items, detailedItems = [], options = {}) {
     },
     {
       name: "รายละเอียดตัวชี้วัดย่อย",
+      columnWidths: [14, 42, 30],
+      noteRowHeight: 106,
+      freezeHeader: false,
+      noteRows: [[
+        "หมายเหตุสำคัญ: คลิกอ่านแถวนี้ก่อนใช้ข้อมูลรายข้อ",
+        "คอลัมน์รายการย่อยด้าน อปท. และด้านสถานศึกษาแสดงเป็น “ข้อที่ 1, ข้อที่ 2...” ตามแบบประเมิน LPA ของปีข้อมูลนั้น ๆ จึงควรเปิดเอกสารรายละเอียดตัวชี้วัดประกอบการแปลผล",
+        `ลิงก์รายละเอียดชื่อรายการประเมิน/ตัวชี้วัดและเกณฑ์เพิ่มเติม: ${INDICATOR_DETAIL_DRIVE_URL}`,
+      ]],
       headers: detailedIndicatorHeaders(),
       rows: detailedRows,
     },

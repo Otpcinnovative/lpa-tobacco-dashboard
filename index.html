@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=3.4">
+  <link rel="stylesheet" href="assets/styles.css?v=4.3.1-draft">
 </head>
 <body class="is-loading">
   <div class="app-shell">
@@ -65,6 +65,7 @@
           <button class="quick-filter" type="button" data-quick="follow">เฉพาะที่ควรติดตาม</button>
         </div>
         <button id="exportExcel" class="export-button" type="button"><span aria-hidden="true">⇩</span> Export Excel</button>
+        <button id="exportImagePreviewToggle" class="export-button export-preview-button" type="button" aria-haspopup="dialog" aria-expanded="false"><span aria-hidden="true">▣</span> Export รูปสรุป</button>
         <button id="resetFilters" class="reset-button" type="button"><span aria-hidden="true">↺</span> ล้างตัวกรอง</button>
         <span id="filterCaption"></span>
       </div>
@@ -115,6 +116,32 @@
       </section>
 
       <div class="year-context-note" id="yearContextNote" hidden></div>
+
+      <section id="exportImagePreviewPanel" class="export-preview-panel" hidden role="dialog" aria-modal="true" aria-labelledby="exportPreviewTitle">
+        <button class="export-preview-backdrop" type="button" data-export-close aria-label="ปิดหน้าต่างส่งออกรูปสรุป"></button>
+        <div class="export-preview-dialog">
+          <div class="export-preview-toolbar">
+            <div>
+              <strong id="exportPreviewTitle">ส่งออกรูปสรุป 16:9</strong>
+              <span>ตรวจภาพตามตัวกรองปัจจุบันก่อนดาวน์โหลด</span>
+            </div>
+            <button id="closeExportPreview" class="export-close-button" type="button" aria-label="ปิดหน้าต่างส่งออกรูปสรุป">×</button>
+          </div>
+          <div class="export-modal-actions">
+            <div class="export-format-group" aria-label="เลือกประเภทไฟล์">
+              <button class="export-format-option is-active" type="button" data-export-format="png">PNG</button>
+              <button class="export-format-option" type="button" data-export-format="jpg">JPG</button>
+              <button class="export-format-option" type="button" data-export-format="pdf">PDF</button>
+            </div>
+            <button id="refreshExportPreview" type="button">รีเฟรชตัวอย่าง</button>
+            <button id="downloadExportPreview" class="export-download-button" type="button">ดาวน์โหลด PNG</button>
+          </div>
+          <div class="export-slide-frame">
+            <img id="exportPreviewImage" class="export-preview-image" alt="ภาพสรุป Dashboard แบบ 16 ต่อ 9">
+            <canvas id="exportCanvas" width="1920" height="1080" hidden></canvas>
+          </div>
+        </div>
+      </section>
 
       <section class="top-visual-grid">
         <article class="panel line-panel">
@@ -281,12 +308,12 @@
 
   <div class="version-badge" id="versionBadge" aria-label="เวอร์ชันแดชบอร์ด" title="กำลังโหลดข้อมูล">
     <span class="version-status-dot is-loading" id="versionStatusDot" aria-hidden="true"></span>
-    <span>V4.1.5</span>
+    <span>V4.3.1 draft</span>
   </div>
 
-  <script src="assets/config.js?v=4.1.5"></script>
+  <script src="assets/config.js?v=4.3.1-draft"></script>
   <script src="assets/lpa-data.js"></script>
   <script src="assets/thailand-province-paths.js"></script>
-  <script src="assets/app.js?v=4.1.5"></script>
+  <script src="assets/app.js?v=4.3.1-draft"></script>
 </body>
 </html>

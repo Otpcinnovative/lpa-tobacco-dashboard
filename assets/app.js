@@ -81,6 +81,14 @@ const els = {
   versionBadge: document.getElementById("versionBadge"),
   versionStatusDot: document.getElementById("versionStatusDot"),
   exportExcel: document.getElementById("exportExcel"),
+  exportImagePreviewToggle: document.getElementById("exportImagePreviewToggle"),
+  exportImagePreviewPanel: document.getElementById("exportImagePreviewPanel"),
+  exportSlide: document.getElementById("exportSlide"),
+  exportPreviewImage: document.getElementById("exportPreviewImage"),
+  exportCanvas: document.getElementById("exportCanvas"),
+  refreshExportPreview: document.getElementById("refreshExportPreview"),
+  closeExportPreview: document.getElementById("closeExportPreview"),
+  downloadExportPreview: document.getElementById("downloadExportPreview"),
   loadingOverlay: document.getElementById("loadingOverlay"),
   loadingTitle: document.getElementById("loadingTitle"),
   loadingText: document.getElementById("loadingText"),
@@ -88,6 +96,7 @@ const els = {
 };
 
 const quickButtons = [...document.querySelectorAll(".quick-filter")];
+const exportFormatButtons = [...document.querySelectorAll(".export-format-option")];
 
 const statusOrder = [
   "ผ่านตามฐานประเมิน",
@@ -113,6 +122,9 @@ const mapMetricStyles = {
 let mapBuilt = false;
 let provinceBBoxes = {};
 let orgSearchSuggestions = [];
+let exportPreviewOpen = false;
+let selectedExportFormat = "png";
+let exportRenderToken = 0;
 
 const state = {
   region: "",
@@ -175,7 +187,7 @@ function updateDataStatusIndicator() {
     els.versionStatusDot.className = `version-status-dot ${meta.className}`;
   }
   if (els.versionBadge) {
-    const label = `V4.1.5 · ${meta.text}`;
+    const label = `V4.3.1 draft · ${meta.text}`;
     els.versionBadge.setAttribute("title", meta.text);
     els.versionBadge.setAttribute("aria-label", label);
   }
@@ -818,6 +830,12 @@ function regionForProvince(province, sourceRecords = records) {
   return match ? String(match.region) : "";
 }
 
+function syncRegionFromSelectedProvince() {
+  if (!state.province) return;
+  const matchedRegion = regionForProvince(state.province);
+  if (matchedRegion) state.region = matchedRegion;
+}
+
 function setOptions(select, values, placeholder, currentValue, sortFn) {
   const sorted = [...values].sort(sortFn || ((a, b) => String(a).localeCompare(String(b), "th")));
   select.innerHTML = "";
@@ -964,6 +982,7 @@ function selectOrgSearchSuggestion(index = 0) {
 
 function refreshFilterOptions() {
   refreshYearOptions();
+  syncRegionFromSelectedProvince();
   const regionBase = filterRecords("region");
   const provinceBase = filterRecords("province");
   const districtBase = filterRecords("district");
@@ -2756,7 +2775,7 @@ function buildExportSheets(items, detailedItems = [], options = {}) {
     ["คำว่า ยังไม่พบการดำเนินงาน ในรายการย่อย", "หมายถึงฐานข้อมูลรายข้อระบุว่ายังไม่พบการดำเนินงานในข้อนั้น จึงเป็นข้อที่สามารถใช้วางแผนพัฒนาคะแนนได้"],
     ["รายการที่ควรพัฒนา", "สรุปจากรายการย่อยที่ยังไม่พบการดำเนินงาน เพื่อให้ผู้ใช้เห็นทันทีว่าควรกลับไปดูหรือพัฒนาข้อใด"],
     ["ช่องว่างหรือเครื่องหมาย - ในรายการย่อย", "หมายถึงฐานกลางของปีนั้นยังไม่มีข้อมูลรายข้อในระดับที่ใช้ Export ได้ ไม่ได้แปลว่าไม่ดำเนินการเสมอไป"],
-    ["หมายเหตุ", "ไฟล์นี้เป็น V4.1.5 ส่งออกจากข้อมูลตามตัวกรองที่ผู้ใช้เลือกใน Dashboard"],
+    ["หมายเหตุ", "ไฟล์นี้เป็น V4.3.1 ส่งออกจากข้อมูลตามตัวกรองที่ผู้ใช้เลือกใน Dashboard"],
   ];
   return [
     {
@@ -2851,6 +2870,1128 @@ async function handleExportExcel() {
   }
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  }[char]));
+}
+
+function exportPreviewScopeTitle() {
+  if (state.district && state.province) return `${state.district} · ${state.province}`;
+  if (state.province) return state.province;
+  if (state.region) return `เขตสุขภาพที่ ${state.region}`;
+  return "ประเทศไทย";
+}
+
+function exportPreviewScopeType() {
+  if (state.province || state.region) return "area";
+  return "country";
+}
+
+function exportPreviewConditionText() {
+  const parts = [
+    state.region ? `เขตสุขภาพที่ ${state.region}` : "ทุกเขตสุขภาพ",
+    state.province || "ทุกจังหวัด",
+    state.district || "ทุกอำเภอ",
+    state.type || "ทุกประเภท อปท.",
+    quickFilterLabel(state.quick),
+  ];
+  if (state.search) parts.push(`ค้นหา: ${state.search}`);
+  return `ผลการดำเนินงานปี ${state.year} ของ${exportPreviewScopeTitle()} ตามเงื่อนไข ${parts.filter(Boolean).join(" · ")}`;
+}
+
+function cloneRenderedSvgHtml(element, className = "") {
+  const svg = element
+    ? (String(element.tagName || "").toLowerCase() === "svg" ? element : element.querySelector("svg"))
+    : null;
+  if (!svg) return `<div class="export-slide-empty">ไม่มีข้อมูล</div>`;
+  const clone = svg.cloneNode(true);
+  clone.removeAttribute("id");
+  clone.classList.add("export-cloned-svg");
+  if (className) clone.classList.add(className);
+  clone.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
+  return clone.outerHTML;
+}
+
+function exportKpiCardsHtml(summary) {
+  const kpis = [
+    {
+      tone: "teal",
+      label: "อปท. ทั้งหมด",
+      value: fmtInt(summary.total),
+      detail: exportPreviewScopeTitle(),
+    },
+    {
+      tone: "blue",
+      label: "ด้าน อปท. ควบคุมผลิตภัณฑ์ยาสูบ",
+      value: fmtPctPlain(summary.rate44),
+      detail: `${fmtInt(summary.pass44)} ผ่าน · ${fmtInt(summary.fail44)} ไม่ผ่าน`,
+    },
+    {
+      tone: "yellow",
+      label: "ด้านสถานศึกษา (อปท.) ควบคุมผลิตภัณฑ์ยาสูบ",
+      value: Number.isFinite(summary.rate45) ? fmtPctPlain(summary.rate45) : "ไม่มีข้อมูล",
+      detail: Number.isFinite(summary.rate45)
+        ? `${fmtInt(summary.pass45)} ผ่าน · ${fmtInt(summary.fail45)} ไม่ผ่าน · ตัดฐาน ${fmtInt(summary.cut45)}`
+        : "ปีนี้ไม่มีข้อมูลเปรียบเทียบด้านสถานศึกษา",
+    },
+    {
+      tone: "red",
+      label: "อปท. ที่ควรติดตาม",
+      value: fmtInt(summary.follow),
+      detail: `ผ่านภาพรวม ${fmtInt(summary.passOverall)} แห่ง`,
+    },
+  ];
+  return kpis.map((kpi) => `
+    <article class="export-slide-kpi export-kpi-${kpi.tone}">
+      <span>${escapeHtml(kpi.label)}</span>
+      <strong>${escapeHtml(kpi.value)}</strong>
+      <small>${escapeHtml(kpi.detail)}</small>
+    </article>
+  `).join("");
+}
+
+function exportDetailMetric(rows) {
+  const summary = summarize(rows);
+  if (state.quick === "lpa") {
+    const value = summary.total ? summary.fail44 / summary.total : NaN;
+    return { value, label: `${fmtInt(summary.fail44)} ต้องติดตามด้าน อปท.` };
+  }
+  if (state.quick === "school") {
+    const base = schoolFollowBase(summary);
+    const follow = summary.fail45 + summary.missing45;
+    const value = base ? follow / base : NaN;
+    return { value, label: `${fmtInt(follow)} ต้องติดตามด้านสถานศึกษา` };
+  }
+  if (state.quick === "follow") {
+    const value = summary.total ? summary.follow / summary.total : NaN;
+    return { value, label: `${fmtInt(summary.follow)} ควรติดตาม` };
+  }
+  return { value: summary.rateOverall, label: `${fmtInt(summary.passOverall)} ผ่านภาพรวม` };
+}
+
+function exportAreaDetailHtml(items) {
+  const groupKey = state.province ? "district" : "province";
+  const title = state.province ? "ผลรายอำเภอ" : "ผลรายจังหวัด";
+  const grouped = groupBy(items, groupKey)
+    .filter(([label]) => label && label !== "ไม่ระบุ")
+    .map(([label, rows]) => {
+      const metric = exportDetailMetric(rows);
+      return { label, rows, ...metric };
+    })
+    .sort((a, b) => (b.value || 0) - (a.value || 0))
+    .slice(0, 7);
+
+  if (!grouped.length) {
+    return `
+      <section class="export-slide-card export-slide-detail">
+        <h3>${title}</h3>
+        <div class="export-slide-empty">ไม่มีข้อมูลในเงื่อนไขนี้</div>
+      </section>
+    `;
+  }
+
+  const rowsHtml = grouped.map((row, index) => {
+    const percent = Number.isFinite(row.value) ? fmtRateNumber(row.value) : "-";
+    return `
+      <div class="export-detail-row">
+        <span class="export-detail-rank">${index + 1}</span>
+        <div>
+          <strong>${escapeHtml(row.label)}</strong>
+          <small>${fmtInt(row.rows.length)} อปท. · ${escapeHtml(row.label)}</small>
+        </div>
+        <div class="export-detail-bar" aria-hidden="true"><i style="width:${Number.isFinite(row.value) ? Math.max(4, row.value * 100) : 0}%"></i></div>
+        <span>${percent}</span>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <section class="export-slide-card export-slide-detail">
+      <div class="export-slide-card-heading">
+        <h3>${title}</h3>
+        <span>${escapeHtml(exportPreviewScopeTitle())}</span>
+      </div>
+      <div class="export-detail-list">${rowsHtml}</div>
+    </section>
+  `;
+}
+
+function exportBarChartHtml(items, chartRegion = "") {
+  const provinceMode = Boolean(chartRegion);
+  const groupKey = provinceMode ? "province" : "region";
+  const grouped = groupBy(items, groupKey)
+    .filter(([label]) => label && label !== "ไม่ระบุ")
+    .sort((a, b) => provinceMode
+      ? String(a[0]).localeCompare(String(b[0]), "th")
+      : Number(a[0]) - Number(b[0]));
+
+  if (!grouped.length) return `<div class="export-slide-empty">ไม่มีข้อมูล</div>`;
+
+  const series = activeMetricSeries();
+  const width = 980;
+  const height = provinceMode ? 360 : 250;
+  const margin = { top: provinceMode ? 30 : 22, right: 16, bottom: provinceMode ? 48 : 30, left: 38 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const groupW = plotW / grouped.length;
+  const barGap = series.length > 1 ? 6 : 0;
+  const barW = Math.max(16, Math.min(34, (groupW - 16 - barGap * Math.max(0, series.length - 1)) / Math.max(1, series.length)));
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const y = (rate) => margin.top + plotH - Math.max(0, Math.min(1, rate || 0)) * plotH;
+  const labelText = (label) => {
+    const text = String(label);
+    if (!provinceMode) return text;
+    return text.length > 7 ? `${text.slice(0, 6)}…` : text;
+  };
+  const colorClass = (key) => key === "45" ? "export-bar-school" : (key === "watch" ? "export-bar-watch" : "export-bar-lpa");
+
+  const grid = ticks.map((tick) => {
+    const yy = y(tick);
+    return `
+      <line class="export-chart-grid" x1="${margin.left}" y1="${yy}" x2="${width - margin.right}" y2="${yy}"></line>
+      <text class="export-chart-axis" x="${margin.left - 8}" y="${yy + 4}" text-anchor="end">${Math.round(tick * 100)}</text>
+    `;
+  }).join("");
+
+  const bars = grouped.map(([label, rows], index) => {
+    const selected = provinceMode && state.province && String(label) === String(state.province);
+    const xCenter = margin.left + index * groupW + groupW / 2;
+    const totalBarW = series.length * barW + Math.max(0, series.length - 1) * barGap;
+    const highlight = selected
+      ? `<rect class="export-chart-highlight" x="${xCenter - Math.min(groupW * 0.42, 42)}" y="${margin.top - 12}" width="${Math.min(groupW * 0.84, 84)}" height="${plotH + 18}" rx="8"></rect>`
+      : "";
+    const labelY = height - 12;
+    return `
+      ${highlight}
+      ${series.map((item, seriesIndex) => {
+        const rate = metricRate(rows, item.key);
+        if (!Number.isFinite(rate)) return "";
+        const xPos = xCenter - totalBarW / 2 + seriesIndex * (barW + barGap);
+        const yPos = y(rate);
+        const h = Math.max(1, margin.top + plotH - yPos);
+        return `
+          <rect class="${colorClass(item.key)}" x="${xPos}" y="${yPos}" width="${barW}" height="${h}" rx="4"></rect>
+          <text class="export-chart-value" x="${xPos + barW / 2}" y="${Math.max(12, yPos - 5)}" text-anchor="middle">${fmtRateNumber(rate)}</text>
+        `;
+      }).join("")}
+      <text class="export-chart-axis export-chart-category" x="${xCenter}" y="${labelY}" text-anchor="middle">${escapeHtml(labelText(label))}</text>
+    `;
+  }).join("");
+
+  return `
+    <svg class="export-compact-bar-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${provinceMode ? "กราฟแท่งรายจังหวัดสำหรับภาพสรุป" : "กราฟแท่งรายเขตสุขภาพสำหรับภาพสรุป"}">
+      ${grid}
+      <line class="export-chart-axis-line" x1="${margin.left}" y1="${margin.top + plotH}" x2="${width - margin.right}" y2="${margin.top + plotH}"></line>
+      <line class="export-chart-axis-line" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}"></line>
+      ${bars}
+      <text class="export-chart-axis export-chart-y-title" x="13" y="${margin.top + plotH / 2}" text-anchor="middle" transform="rotate(-90 13 ${margin.top + plotH / 2})">ร้อยละ</text>
+    </svg>
+  `;
+}
+
+function exportTrendChartHtml(items) {
+  const cachedYears = availableYears.filter((year) => recordsByYear.has(Number(year))).sort((a, b) => Number(a) - Number(b));
+  const hasActiveFilter = Boolean(state.region || state.province || state.district || state.type || state.search || state.quick !== "all");
+  const useCountrySummary = !hasActiveFilter && countrySummaries.length;
+  const summaries = useCountrySummary
+    ? [...countrySummaries].sort((a, b) => Number(a.year) - Number(b.year)).map((row) => ({
+      year: row.year,
+      rates: {
+        "44": toRate(row.lpa_side_pass_rate),
+        "45": isComparableValue(row.school_side_comparable) ? toRate(row.school_side_pass_rate) : NaN,
+      },
+    }))
+    : cachedYears.length
+      ? cachedYears.map((year) => ({ year, rows: filterRecords("quick", recordsByYear.get(Number(year))) }))
+      : [{ year: state.year, rows: items }];
+
+  if (!summaries.length) return `<div class="export-slide-empty">ไม่มีข้อมูล</div>`;
+
+  const series = activeMetricSeries();
+  const width = 980;
+  const areaMode = exportPreviewScopeType() === "area";
+  const height = areaMode ? 350 : 250;
+  const margin = { top: areaMode ? 34 : 26, right: 34, bottom: areaMode ? 42 : 32, left: 38 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const years = summaries.map((row) => Number(row.year));
+  const x = (index) => margin.left + (summaries.length === 1 ? plotW / 2 : index * (plotW / (summaries.length - 1)));
+  const y = (rate) => margin.top + plotH - Math.max(0, Math.min(1, rate || 0)) * plotH;
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const pilotIndex = years.findIndex((year) => Number(year) === 2567);
+  const pilotX = pilotIndex >= 0 ? x(pilotIndex) : null;
+  const allPoints = series.map((item) => ({
+    ...item,
+    points: summaries.map((row, index) => {
+      const rate = row.rates ? row.rates[item.key] : metricRate(row.rows, item.key);
+      return { x: x(index), y: y(rate), rate, year: row.year };
+    }).filter((point) => Number.isFinite(point.rate)),
+  }));
+  const path = (points) => points.map((p, i) => `${i ? "L" : "M"}${p.x},${p.y}`).join(" ");
+  const colorClass = (key) => key === "45" ? "export-trend-school" : (key === "watch" ? "export-trend-watch" : "export-trend-lpa");
+
+  const valueLabel = (point, item, pointIndex, points) => {
+    const xShift = pointIndex === 0 ? 15 : pointIndex === points.length - 1 ? -15 : 0;
+    const yShift = item.key === "45" ? 22 : -12;
+    return `<text class="export-chart-value export-trend-value" x="${point.x + xShift}" y="${point.y + yShift}" text-anchor="middle">${fmtRateNumber(point.rate)}</text>`;
+  };
+
+  return `
+    <svg class="export-compact-trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟเส้นเทียบรายปีสำหรับภาพสรุป">
+      ${ticks.map((tick) => {
+        const yy = y(tick);
+        return `
+          <line class="export-chart-grid" x1="${margin.left}" y1="${yy}" x2="${width - margin.right}" y2="${yy}"></line>
+          <text class="export-chart-axis" x="${margin.left - 8}" y="${yy + 4}" text-anchor="end">${Math.round(tick * 100)}</text>
+        `;
+      }).join("")}
+      <line class="export-chart-axis-line" x1="${margin.left}" y1="${margin.top + plotH}" x2="${width - margin.right}" y2="${margin.top + plotH}"></line>
+      <line class="export-chart-axis-line" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}"></line>
+      ${pilotX !== null ? `<line class="export-trend-marker" x1="${pilotX}" y1="${margin.top}" x2="${pilotX}" y2="${margin.top + plotH}"></line><text class="export-trend-marker-label" x="${pilotX + 10}" y="${margin.top + 16}">เริ่มข้อมูลสถานศึกษา</text>` : ""}
+      ${allPoints.map((item) => item.points.length > 1
+        ? `<path class="export-trend-line ${colorClass(item.key)}" d="${path(item.points)}"></path>`
+        : "").join("")}
+      ${allPoints.map((item) => item.points.map((point, index) => `
+        <circle class="export-trend-dot ${colorClass(item.key)}" cx="${point.x}" cy="${point.y}" r="5"></circle>
+        ${valueLabel(point, item, index, item.points)}
+      `).join("")).join("")}
+      ${years.map((year, index) => `<text class="export-chart-axis export-chart-category" x="${x(index)}" y="${height - 12}" text-anchor="middle">${year}</text>`).join("")}
+      <text class="export-chart-axis export-chart-y-title" x="13" y="${margin.top + plotH / 2}" text-anchor="middle" transform="rotate(-90 13 ${margin.top + plotH / 2})">ร้อยละ</text>
+    </svg>
+  `;
+}
+
+function exportCanvasFont(size, weight = 700) {
+  return `${weight} ${size}px "IBM Plex Sans Thai", Tahoma, Arial, sans-serif`;
+}
+
+function exportCanvasColor(tone) {
+  return {
+    teal: "#00a6a6",
+    blue: "#257dd7",
+    yellow: "#f5b82e",
+    red: "#d94d45",
+    green: "#25a97b",
+    text: "#102b40",
+    muted: "#5f7688",
+    border: "#d6e8ef",
+    soft: "#eef8fb",
+    grid: "#d9e9ef",
+  }[tone] || tone;
+}
+
+function drawRoundedRect(ctx, x, y, width, height, radius = 10) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawCanvasCard(ctx, x, y, width, height, options = {}) {
+  const { accent = "", fill = "#ffffff", radius = 10 } = options;
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = exportCanvasColor("border");
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  if (accent) {
+    ctx.save();
+    drawRoundedRect(ctx, x, y, width, height, radius);
+    ctx.clip();
+    ctx.fillStyle = accent;
+    ctx.fillRect(x, y, 7, height);
+    ctx.restore();
+  }
+}
+
+function wrapCanvasText(ctx, text, maxWidth) {
+  const raw = String(text ?? "");
+  if (!raw) return [""];
+  const paragraphs = raw.split(/\n/);
+  const lines = [];
+  paragraphs.forEach((paragraph) => {
+    const words = paragraph.split(/(\s+)/).filter(Boolean);
+    let line = "";
+    words.forEach((word) => {
+      const test = line ? line + word : word;
+      if (ctx.measureText(test).width <= maxWidth) {
+        line = test;
+        return;
+      }
+      if (line) {
+        lines.push(line.trimEnd());
+        line = "";
+      }
+      if (ctx.measureText(word).width <= maxWidth) {
+        line = word.trimStart();
+        return;
+      }
+      let chunk = "";
+      Array.from(word).forEach((char) => {
+        const testChunk = chunk + char;
+        if (ctx.measureText(testChunk).width > maxWidth && chunk) {
+          lines.push(chunk);
+          chunk = char;
+        } else {
+          chunk = testChunk;
+        }
+      });
+      line = chunk;
+    });
+    if (line) lines.push(line.trimEnd());
+  });
+  return lines.length ? lines : [""];
+}
+
+function drawCanvasText(ctx, text, x, y, options = {}) {
+  const {
+    size = 20,
+    weight = 700,
+    color = exportCanvasColor("text"),
+    maxWidth = Infinity,
+    lineHeight = Math.round(size * 1.28),
+    maxLines = 1,
+    align = "left",
+    baseline = "top",
+  } = options;
+  ctx.save();
+  ctx.font = exportCanvasFont(size, weight);
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
+  const lines = Number.isFinite(maxWidth) ? wrapCanvasText(ctx, text, maxWidth) : [String(text ?? "")];
+  const clipped = lines.slice(0, maxLines);
+  clipped.forEach((line, index) => {
+    let output = line;
+    if (index === maxLines - 1 && lines.length > maxLines) {
+      while (ctx.measureText(`${output}...`).width > maxWidth && output.length > 0) {
+        output = Array.from(output).slice(0, -1).join("");
+      }
+      output = `${output}...`;
+    }
+    ctx.fillText(output, x, y + index * lineHeight);
+  });
+  ctx.restore();
+  return clipped.length * lineHeight;
+}
+
+function drawCanvasFitText(ctx, text, x, y, maxWidth, options = {}) {
+  const minSize = options.minSize || 16;
+  const maxLines = options.maxLines || 1;
+  for (let size = options.size || 24; size >= minSize; size -= 1) {
+    ctx.font = exportCanvasFont(size, options.weight || 700);
+    if (wrapCanvasText(ctx, text, maxWidth).length <= maxLines) {
+      return drawCanvasText(ctx, text, x, y, { ...options, size, maxWidth, maxLines });
+    }
+  }
+  return drawCanvasText(ctx, text, x, y, { ...options, size: minSize, maxWidth, maxLines });
+}
+
+function truncateCanvasText(ctx, text, maxWidth) {
+  let output = String(text ?? "");
+  if (ctx.measureText(output).width <= maxWidth) return output;
+  while (ctx.measureText(`${output}...`).width > maxWidth && output.length > 0) {
+    output = Array.from(output).slice(0, -1).join("");
+  }
+  return `${output}...`;
+}
+
+function drawImageContain(ctx, image, x, y, width, height) {
+  const ratio = Math.min(width / image.width, height / image.height);
+  const drawW = image.width * ratio;
+  const drawH = image.height * ratio;
+  ctx.drawImage(image, x + (width - drawW) / 2, y + (height - drawH) / 2, drawW, drawH);
+}
+
+function drawExportPill(ctx, text, x, y, options = {}) {
+  ctx.save();
+  ctx.font = exportCanvasFont(options.size || 18, 700);
+  const padX = options.padX || 18;
+  const width = Math.min(options.maxWidth || 150, ctx.measureText(text).width + padX * 2);
+  const height = options.height || 42;
+  drawRoundedRect(ctx, x - width, y, width, height, height / 2);
+  ctx.fillStyle = options.fill || "#dff7f4";
+  ctx.fill();
+  ctx.fillStyle = options.color || "#008b87";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(truncateCanvasText(ctx, text, width - padX), x - width / 2, y + height / 2);
+  ctx.restore();
+}
+
+function exportKpiCanvasData(summary) {
+  return [
+    {
+      tone: "teal",
+      label: "อปท. ทั้งหมด",
+      value: fmtInt(summary.total),
+      detail: exportPreviewScopeTitle(),
+    },
+    {
+      tone: "blue",
+      label: "ด้าน อปท. ควบคุมผลิตภัณฑ์ยาสูบ",
+      value: fmtPctPlain(summary.rate44),
+      detail: `${fmtInt(summary.pass44)} ผ่าน · ${fmtInt(summary.fail44)} ไม่ผ่าน`,
+    },
+    {
+      tone: "yellow",
+      label: "ด้านสถานศึกษา (อปท.) ควบคุมผลิตภัณฑ์ยาสูบ",
+      value: Number.isFinite(summary.rate45) ? fmtPctPlain(summary.rate45) : "ไม่มีข้อมูล",
+      detail: Number.isFinite(summary.rate45)
+        ? `${fmtInt(summary.pass45)} ผ่าน · ${fmtInt(summary.fail45)} ไม่ผ่าน · ตัดฐาน ${fmtInt(summary.cut45)}`
+        : "ปีนี้ไม่มีข้อมูลเปรียบเทียบด้านสถานศึกษา",
+    },
+    {
+      tone: "red",
+      label: "อปท. ที่ควรติดตาม",
+      value: fmtInt(summary.follow),
+      detail: `ผ่านภาพรวม ${fmtInt(summary.passOverall)} แห่ง`,
+    },
+  ];
+}
+
+function drawExportHeader(ctx, x, y, width) {
+  const conditionW = 455;
+  drawCanvasFitText(
+    ctx,
+    "การดำเนินงานควบคุมผลิตภัณฑ์ยาสูบขององค์กรปกครองส่วนท้องถิ่น",
+    x,
+    y,
+    width - conditionW - 52,
+    { size: 43, minSize: 34, weight: 800, maxLines: 1, color: "#000000" },
+  );
+  drawCanvasFitText(
+    ctx,
+    "จากข้อมูลผลการประเมินประสิทธิภาพองค์กรปกครองส่วนท้องถิ่น (LPA)",
+    x,
+    y + 58,
+    width - conditionW - 52,
+    { size: 25, minSize: 20, weight: 800, maxLines: 1, color: "#000000" },
+  );
+
+  const conditionX = x + width - conditionW;
+  drawCanvasCard(ctx, conditionX, y - 8, conditionW, 116, { accent: exportCanvasColor("teal"), fill: "#f8fcfd", radius: 12 });
+  drawCanvasText(ctx, exportPreviewConditionText(), conditionX + 28, y + 14, {
+    size: 20,
+    weight: 700,
+    color: exportCanvasColor("muted"),
+    maxWidth: conditionW - 52,
+    maxLines: 4,
+    lineHeight: 27,
+  });
+}
+
+function drawExportKpis(ctx, summary, x, y, width) {
+  const gap = 18;
+  const cardW = (width - gap * 3) / 4;
+  exportKpiCanvasData(summary).forEach((kpi, index) => {
+    const cardX = x + index * (cardW + gap);
+    drawCanvasCard(ctx, cardX, y, cardW, 132, { accent: exportCanvasColor(kpi.tone), radius: 10 });
+    drawCanvasFitText(ctx, kpi.label, cardX + 28, y + 22, cardW - 56, {
+      size: 21,
+      minSize: 16,
+      weight: 800,
+      color: exportCanvasColor("muted"),
+      maxLines: 1,
+    });
+    drawCanvasFitText(ctx, kpi.value, cardX + 28, y + 56, cardW - 56, {
+      size: 50,
+      minSize: 34,
+      weight: 800,
+      color: exportCanvasColor("text"),
+      maxLines: 1,
+    });
+    drawCanvasText(ctx, kpi.detail, cardX + 28, y + 104, {
+      size: 19,
+      weight: 700,
+      color: exportCanvasColor("muted"),
+      maxWidth: cardW - 56,
+      maxLines: 1,
+    });
+  });
+}
+
+function drawExportChartFrame(ctx, x, y, width, height, title) {
+  drawCanvasCard(ctx, x, y, width, height, { radius: 10 });
+  drawCanvasFitText(ctx, title, x + 22, y + 20, width - 44, {
+    size: 27,
+    minSize: 20,
+    weight: 800,
+    maxLines: 1,
+  });
+}
+
+function drawExportMapCard(ctx, x, y, width, height, mapImage) {
+  drawExportChartFrame(ctx, x, y, width, height, "ภาพแผนที่ประเทศไทย");
+  const pillText = els.mapPill ? els.mapPill.textContent.trim() : "";
+  if (pillText) drawExportPill(ctx, pillText, x + width - 22, y + 18, { maxWidth: 140 });
+  if (mapImage) drawImageContain(ctx, mapImage, x + 20, y + 68, width - 40, height - 112);
+  drawCanvasText(ctx, currentMapMetric().label, x + width / 2, y + height - 34, {
+    size: 19,
+    weight: 700,
+    color: exportCanvasColor("muted"),
+    align: "center",
+  });
+}
+
+function exportTrendSummaries(items) {
+  const series = activeMetricSeries();
+  const cachedYears = availableYears.filter((year) => recordsByYear.has(Number(year))).sort((a, b) => Number(a) - Number(b));
+  const hasActiveFilter = Boolean(state.region || state.province || state.district || state.type || state.search || state.quick !== "all");
+  const canUseCountrySummary = !hasActiveFilter && countrySummaries.length && !series.some((item) => item.key === "watch");
+  if (canUseCountrySummary) {
+    return [...countrySummaries].sort((a, b) => Number(a.year) - Number(b.year)).map((row) => ({
+      year: Number(row.year),
+      rates: {
+        "44": toRate(row.lpa_side_pass_rate),
+        "45": isComparableValue(row.school_side_comparable) ? toRate(row.school_side_pass_rate) : NaN,
+      },
+    }));
+  }
+  if (cachedYears.length) {
+    return cachedYears.map((year) => ({ year: Number(year), rows: filterRecords("quick", recordsByYear.get(Number(year))) }));
+  }
+  return [{ year: Number(state.year), rows: items }];
+}
+
+function drawExportLineChart(ctx, items, x, y, width, height) {
+  drawExportChartFrame(ctx, x, y, width, height, "กราฟเส้นเทียบรายปี");
+  const summaries = exportTrendSummaries(items);
+  if (!summaries.length) {
+    drawCanvasText(ctx, "ไม่มีข้อมูล", x + width / 2, y + height / 2, { size: 22, align: "center", color: exportCanvasColor("muted") });
+    return;
+  }
+  const series = activeMetricSeries();
+  const margin = { top: 72, right: 38, bottom: 50, left: 58 };
+  const plotX = x + margin.left;
+  const plotY = y + margin.top;
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const yScale = (rate) => plotY + plotH - Math.max(0, Math.min(1, rate || 0)) * plotH;
+  const xScale = (index) => plotX + (summaries.length === 1 ? plotW / 2 : index * (plotW / (summaries.length - 1)));
+  ctx.save();
+  ctx.strokeStyle = exportCanvasColor("grid");
+  ctx.lineWidth = 1.5;
+  [0, 0.25, 0.5, 0.75, 1].forEach((tick) => {
+    const yy = yScale(tick);
+    ctx.beginPath();
+    ctx.moveTo(plotX, yy);
+    ctx.lineTo(plotX + plotW, yy);
+    ctx.stroke();
+    drawCanvasText(ctx, String(Math.round(tick * 100)), plotX - 14, yy - 10, { size: 17, weight: 800, color: exportCanvasColor("muted"), align: "right" });
+  });
+  ctx.strokeStyle = "#c8dde6";
+  ctx.beginPath();
+  ctx.moveTo(plotX, plotY);
+  ctx.lineTo(plotX, plotY + plotH);
+  ctx.lineTo(plotX + plotW, plotY + plotH);
+  ctx.stroke();
+  drawCanvasText(ctx, "ร้อยละ", plotX - 46, plotY + plotH / 2, { size: 17, weight: 800, color: exportCanvasColor("muted"), align: "center" });
+
+  const pilotIndex = summaries.findIndex((row) => Number(row.year) === 2567);
+  if (pilotIndex >= 0) {
+    const px = xScale(pilotIndex);
+    ctx.setLineDash([6, 8]);
+    ctx.strokeStyle = "#b8d2df";
+    ctx.beginPath();
+    ctx.moveTo(px, plotY);
+    ctx.lineTo(px, plotY + plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    drawCanvasText(ctx, "เริ่มข้อมูลสถานศึกษา", px + 14, plotY + 30, { size: 14, weight: 700, color: exportCanvasColor("muted"), maxWidth: 180, maxLines: 1 });
+  }
+
+  series.forEach((item) => {
+    const points = summaries.map((row, index) => {
+      const rate = row.rates ? row.rates[item.key] : metricRate(row.rows, item.key);
+      return { x: xScale(index), y: yScale(rate), rate, year: row.year };
+    }).filter((point) => Number.isFinite(point.rate));
+    if (!points.length) return;
+    const color = item.key === "45" ? exportCanvasColor("yellow") : item.key === "watch" ? exportCanvasColor("red") : exportCanvasColor("blue");
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      if (index) ctx.lineTo(point.x, point.y);
+      else ctx.moveTo(point.x, point.y);
+    });
+    ctx.stroke();
+    points.forEach((point, index) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+      ctx.fill();
+      const last = index === points.length - 1;
+      const first = index === 0;
+      const yOffset = item.key === "45" ? 20 : -28;
+      const xOffset = first ? 16 : last ? -16 : 0;
+      drawCanvasText(ctx, fmtRateNumber(point.rate), point.x + xOffset, point.y + yOffset, {
+        size: 17,
+        weight: 800,
+        color: exportCanvasColor("text"),
+        align: "center",
+      });
+    });
+  });
+  summaries.forEach((row, index) => {
+    drawCanvasText(ctx, String(row.year), xScale(index), plotY + plotH + 24, {
+      size: 17,
+      weight: 800,
+      color: exportCanvasColor("muted"),
+      align: "center",
+    });
+  });
+  ctx.restore();
+}
+
+function exportBarGroups(items, chartRegion = "") {
+  const provinceMode = Boolean(chartRegion);
+  const groupKey = provinceMode ? "province" : "region";
+  return groupBy(items, groupKey)
+    .filter(([label]) => label && label !== "ไม่ระบุ")
+    .sort((a, b) => provinceMode
+      ? String(a[0]).localeCompare(String(b[0]), "th")
+      : Number(a[0]) - Number(b[0]));
+}
+
+function drawExportBarChart(ctx, items, chartRegion, x, y, width, height) {
+  const title = chartRegion ? "กราฟแท่งรายจังหวัด" : "กราฟแท่งรายเขตสุขภาพ";
+  drawExportChartFrame(ctx, x, y, width, height, title);
+  const grouped = exportBarGroups(items, chartRegion);
+  if (!grouped.length) {
+    drawCanvasText(ctx, "ไม่มีข้อมูล", x + width / 2, y + height / 2, { size: 22, align: "center", color: exportCanvasColor("muted") });
+    return;
+  }
+  const series = activeMetricSeries();
+  const margin = { top: 72, right: 32, bottom: 58, left: 58 };
+  const plotX = x + margin.left;
+  const plotY = y + margin.top;
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const groupW = plotW / grouped.length;
+  const barGap = series.length > 1 ? 8 : 0;
+  const barW = Math.max(14, Math.min(42, (groupW - 18 - barGap * Math.max(0, series.length - 1)) / Math.max(1, series.length)));
+  const yScale = (rate) => plotY + plotH - Math.max(0, Math.min(1, rate || 0)) * plotH;
+  ctx.save();
+  ctx.strokeStyle = exportCanvasColor("grid");
+  ctx.lineWidth = 1.5;
+  [0, 0.25, 0.5, 0.75, 1].forEach((tick) => {
+    const yy = yScale(tick);
+    ctx.beginPath();
+    ctx.moveTo(plotX, yy);
+    ctx.lineTo(plotX + plotW, yy);
+    ctx.stroke();
+    drawCanvasText(ctx, String(Math.round(tick * 100)), plotX - 14, yy - 10, { size: 17, weight: 800, color: exportCanvasColor("muted"), align: "right" });
+  });
+  ctx.strokeStyle = "#c8dde6";
+  ctx.beginPath();
+  ctx.moveTo(plotX, plotY);
+  ctx.lineTo(plotX, plotY + plotH);
+  ctx.lineTo(plotX + plotW, plotY + plotH);
+  ctx.stroke();
+  drawCanvasText(ctx, "ร้อยละ", plotX - 46, plotY + plotH / 2, { size: 17, weight: 800, color: exportCanvasColor("muted"), align: "center" });
+
+  grouped.forEach(([label, rows], index) => {
+    const xCenter = plotX + index * groupW + groupW / 2;
+    const totalBarW = series.length * barW + Math.max(0, series.length - 1) * barGap;
+    const selected = chartRegion && state.province && String(label) === String(state.province);
+    if (selected) {
+      ctx.fillStyle = "#eaf9f7";
+      drawRoundedRect(ctx, xCenter - Math.min(groupW * 0.42, 58), plotY - 14, Math.min(groupW * 0.84, 116), plotH + 20, 8);
+      ctx.fill();
+    }
+    series.forEach((item, seriesIndex) => {
+      const rate = metricRate(rows, item.key);
+      if (!Number.isFinite(rate)) return;
+      const color = item.key === "45" ? exportCanvasColor("yellow") : item.key === "watch" ? exportCanvasColor("red") : exportCanvasColor("blue");
+      const barX = xCenter - totalBarW / 2 + seriesIndex * (barW + barGap);
+      const barY = yScale(rate);
+      const barH = Math.max(1, plotY + plotH - barY);
+      ctx.fillStyle = color;
+      drawRoundedRect(ctx, barX, barY, barW, barH, 5);
+      ctx.fill();
+      drawCanvasText(ctx, fmtRateNumber(rate), barX + barW / 2, Math.max(y + 56, barY - 24), {
+        size: grouped.length > 10 ? 15 : 17,
+        weight: 800,
+        color: exportCanvasColor("text"),
+        align: "center",
+      });
+    });
+    ctx.font = exportCanvasFont(grouped.length > 10 ? 15 : 16, 800);
+    const labelText = chartRegion ? truncateCanvasText(ctx, String(label), Math.max(52, groupW - 10)) : String(label);
+    drawCanvasText(ctx, labelText, xCenter, plotY + plotH + 24, {
+      size: grouped.length > 10 ? 15 : 16,
+      weight: 800,
+      color: exportCanvasColor("muted"),
+      align: "center",
+      maxWidth: groupW - 4,
+    });
+  });
+  ctx.restore();
+}
+
+function exportAreaDetailRows(items) {
+  const groupKey = state.province ? "district" : "province";
+  return groupBy(items, groupKey)
+    .filter(([label]) => label && label !== "ไม่ระบุ")
+    .map(([label, rows]) => {
+      const metric = exportDetailMetric(rows);
+      return { label, rows, ...metric };
+    })
+    .sort((a, b) => (b.value || 0) - (a.value || 0))
+    .slice(0, 7);
+}
+
+function drawExportDetailList(ctx, items, x, y, width, height) {
+  const title = state.province ? "ผลรายอำเภอ" : "ผลรายจังหวัด";
+  drawExportChartFrame(ctx, x, y, width, height, title);
+  const pill = state.province ? state.province : state.region ? `เขตสุขภาพที่ ${state.region}` : exportPreviewScopeTitle();
+  drawExportPill(ctx, pill, x + width - 18, y + 18, { maxWidth: 150, size: 17 });
+  const rows = exportAreaDetailRows(items);
+  if (!rows.length) {
+    drawCanvasText(ctx, "ไม่มีข้อมูล", x + width / 2, y + height / 2, { size: 22, align: "center", color: exportCanvasColor("muted") });
+    return;
+  }
+  const rowH = Math.min(72, (height - 82) / rows.length);
+  const startY = y + 70;
+  rows.forEach((row, index) => {
+    const rowY = startY + index * rowH;
+    if (index > 0) {
+      ctx.strokeStyle = "#e4eef3";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + 20, rowY - 8);
+      ctx.lineTo(x + width - 20, rowY - 8);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#dff7f4";
+    drawRoundedRect(ctx, x + 22, rowY, 34, 34, 11);
+    ctx.fill();
+    drawCanvasText(ctx, String(index + 1), x + 39, rowY + 6, { size: 18, weight: 800, color: "#008b87", align: "center" });
+    const metric = Number.isFinite(row.value) ? row.value : 0;
+    const percent = Number.isFinite(row.value) ? fmtRateNumber(row.value) : "-";
+    drawCanvasFitText(ctx, row.label, x + 70, rowY - 2, 180, { size: 22, minSize: 17, weight: 800, maxLines: 1 });
+    drawCanvasText(ctx, `${fmtInt(row.rows.length)} อปท. · ${exportDetailMetric(row.rows).label}`, x + 70, rowY + 28, {
+      size: 15,
+      weight: 700,
+      color: exportCanvasColor("muted"),
+      maxWidth: 230,
+      maxLines: 1,
+    });
+    const barX = x + width - 198;
+    const barY = rowY + 13;
+    ctx.fillStyle = "#e7f3f3";
+    drawRoundedRect(ctx, barX, barY, 110, 12, 6);
+    ctx.fill();
+    ctx.fillStyle = exportCanvasColor("green");
+    drawRoundedRect(ctx, barX, barY, Math.max(4, Math.min(110, metric * 110)), 12, 6);
+    ctx.fill();
+    drawCanvasText(ctx, percent, x + width - 22, rowY + 4, { size: 20, weight: 800, align: "right" });
+  });
+}
+
+function svgElementToDataUrlWithStyles(svgElement) {
+  if (!svgElement) return "";
+  const clone = svgElement.cloneNode(true);
+  clone.removeAttribute("id");
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  clone.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
+  const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+  style.textContent = collectExportCssText();
+  clone.insertBefore(style, clone.firstChild);
+  return svgToDataUrl(new XMLSerializer().serializeToString(clone));
+}
+
+async function renderExportPreview() {
+  if (!els.exportImagePreviewPanel || !els.exportPreviewImage || !exportPreviewOpen) return;
+  const token = ++exportRenderToken;
+  try {
+    const canvas = await renderExportSlideCanvas();
+    if (token !== exportRenderToken) return;
+    els.exportPreviewImage.src = canvas.toDataURL("image/png");
+  } catch (error) {
+    console.error("Cannot render export preview.", error);
+  }
+}
+
+/*
+ * The image export is canvas-first. The preview image and every downloaded file
+ * are generated from the same canvas so typography and wrapping stay identical.
+ */
+async function drawExportCanvas(ctx, canvas) {
+  const items = filterRecords();
+  const summary = summarize(items);
+  const mode = exportPreviewScopeType();
+  const chartRegion = state.region || regionForProvince(state.province);
+  const barItems = chartRegion
+    ? filterRecords(["region", "province", "district", "quick"]).filter((record) => String(record.region) === String(chartRegion))
+    : filterRecords(["region", "quick"]);
+  const W = canvas.width;
+  const H = canvas.height;
+  const margin = 58;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+  drawExportHeader(ctx, margin, 58, W - margin * 2);
+  drawExportKpis(ctx, summary, margin, 205, W - margin * 2);
+
+  const mainY = 360;
+  const mainH = 610;
+  const gap = 18;
+  let mapImage = null;
+  const mapUrl = svgElementToDataUrlWithStyles(els.thaiMapSvg);
+  if (mapUrl) {
+    try {
+      mapImage = await loadImage(mapUrl);
+    } catch (error) {
+      console.warn("Cannot include map in export canvas.", error);
+    }
+  }
+
+  if (mode === "area") {
+    const mapW = 560;
+    const detailW = 465;
+    const chartW = W - margin * 2 - mapW - detailW - gap * 2;
+    const chartX = margin + mapW + gap;
+    const detailX = chartX + chartW + gap;
+    const chartH = (mainH - gap) / 2;
+    drawExportMapCard(ctx, margin, mainY, mapW, mainH, mapImage);
+    drawExportLineChart(ctx, items, chartX, mainY, chartW, chartH);
+    drawExportBarChart(ctx, barItems, chartRegion, chartX, mainY + chartH + gap, chartW, chartH);
+    drawExportDetailList(ctx, items, detailX, mainY, detailW, mainH);
+  } else {
+    const mapW = 650;
+    const chartX = margin + mapW + gap;
+    const chartW = W - margin * 2 - mapW - gap;
+    const chartH = (mainH - gap) / 2;
+    drawExportMapCard(ctx, margin, mainY, mapW, mainH, mapImage);
+    drawExportLineChart(ctx, items, chartX, mainY, chartW, chartH);
+    drawExportBarChart(ctx, barItems, chartRegion, chartX, mainY + chartH + gap, chartW, chartH);
+  }
+
+  drawCanvasText(ctx, "จัดทำโดย กองงานคณะกรรมการควบคุมผลิตภัณฑ์ยาสูบ กรมควบคุมโรค", margin, H - 54, {
+    size: 18,
+    weight: 700,
+    color: exportCanvasColor("muted"),
+    maxWidth: 900,
+  });
+  drawCanvasText(ctx, `วันที่อัปเดตข้อมูล: ${MANUAL_UPDATED_AT_LABEL}`, W - margin, H - 54, {
+    size: 18,
+    weight: 700,
+    color: exportCanvasColor("muted"),
+    align: "right",
+  });
+}
+
+function exportPreviewFileName(format = selectedExportFormat) {
+  const scope = exportFileSafe(exportPreviewScopeTitle()) || exportFileSafe(exportScopeLabel()) || `year_${state.year}`;
+  return `LPA_Summary_${state.year}_${scope}.${format}`;
+}
+
+function collectExportCssText() {
+  return [...document.styleSheets]
+    .map((sheet) => {
+      try {
+        return [...sheet.cssRules].map((rule) => rule.cssText).join("\n");
+      } catch (error) {
+        return "";
+      }
+    })
+    .join("\n");
+}
+
+function inlineComputedExportStyles(sourceNode, cloneNode) {
+  const sourceElements = [sourceNode, ...sourceNode.querySelectorAll("*")];
+  const cloneElements = [cloneNode, ...cloneNode.querySelectorAll("*")];
+  sourceElements.forEach((sourceElement, index) => {
+    const cloneElement = cloneElements[index];
+    if (!cloneElement || !(sourceElement instanceof Element)) return;
+    const computed = window.getComputedStyle(sourceElement);
+    const computedText = [...computed]
+      .map((property) => `${property}:${computed.getPropertyValue(property)};`)
+      .join("");
+    const existingStyle = cloneElement.getAttribute("style") || "";
+    cloneElement.setAttribute("style", `${existingStyle};${computedText}`);
+  });
+}
+
+function svgToDataUrl(svgText) {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Cannot create export image."));
+    }, type, quality);
+  });
+}
+
+function triggerBlobDownload(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function renderExportSlideCanvas({ jpegBackground = false } = {}) {
+  if (!els.exportCanvas) throw new Error("Export canvas is not available.");
+  if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  const canvas = els.exportCanvas;
+  canvas.width = 1920;
+  canvas.height = 1080;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  await drawExportCanvas(context, canvas);
+  if (jpegBackground) {
+    context.globalCompositeOperation = "destination-over";
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.globalCompositeOperation = "source-over";
+  }
+  return canvas;
+}
+
+function makePdfFromJpegDataUrl(jpegDataUrl, imageWidth, imageHeight) {
+  const binary = atob(jpegDataUrl.split(",")[1]);
+  const encoder = new TextEncoder();
+  const chunks = [];
+  const offsets = [0];
+  let offset = 0;
+  const pageWidth = 960;
+  const pageHeight = 540;
+
+  const appendText = (text) => {
+    const bytes = encoder.encode(text);
+    chunks.push(bytes);
+    offset += bytes.length;
+  };
+  const appendBinary = (text) => {
+    const bytes = new Uint8Array(text.length);
+    for (let index = 0; index < text.length; index += 1) bytes[index] = text.charCodeAt(index);
+    chunks.push(bytes);
+    offset += bytes.length;
+  };
+  const beginObject = (number) => {
+    offsets[number] = offset;
+    appendText(`${number} 0 obj\n`);
+  };
+  const endObject = () => appendText("\nendobj\n");
+
+  appendText("%PDF-1.4\n%\u00ff\u00ff\u00ff\u00ff\n");
+  beginObject(1);
+  appendText("<< /Type /Catalog /Pages 2 0 R >>");
+  endObject();
+  beginObject(2);
+  appendText("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  endObject();
+  beginObject(3);
+  appendText(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
+  endObject();
+  beginObject(4);
+  appendText(`<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${binary.length} >>\nstream\n`);
+  appendBinary(binary);
+  appendText("\nendstream");
+  endObject();
+  const content = `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /Im0 Do Q`;
+  beginObject(5);
+  appendText(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  endObject();
+
+  const xrefOffset = offset;
+  appendText(`xref\n0 6\n0000000000 65535 f \n`);
+  for (let number = 1; number <= 5; number += 1) {
+    appendText(`${String(offsets[number]).padStart(10, "0")} 00000 n \n`);
+  }
+  appendText(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const output = new Uint8Array(totalLength);
+  let cursor = 0;
+  chunks.forEach((chunk) => {
+    output.set(chunk, cursor);
+    cursor += chunk.length;
+  });
+  return new Blob([output], { type: "application/pdf" });
+}
+
+async function handleExportImageDownload() {
+  if (!els.downloadExportPreview) return;
+  const format = selectedExportFormat;
+  const originalText = els.downloadExportPreview.textContent;
+  els.downloadExportPreview.disabled = true;
+  els.downloadExportPreview.textContent = "กำลังสร้างไฟล์";
+  try {
+    if (format === "pdf") {
+      const canvas = await renderExportSlideCanvas({ jpegBackground: true });
+      const pdfBlob = makePdfFromJpegDataUrl(canvas.toDataURL("image/jpeg", 0.92), canvas.width, canvas.height);
+      triggerBlobDownload(pdfBlob, exportPreviewFileName("pdf"));
+      return;
+    }
+    const canvas = await renderExportSlideCanvas({ jpegBackground: format === "jpg" });
+    const blob = await canvasToBlob(canvas, format === "jpg" ? "image/jpeg" : "image/png", 0.92);
+    triggerBlobDownload(blob, exportPreviewFileName(format));
+  } catch (error) {
+    console.error("Cannot export image preview.", error);
+    window.alert("ไม่สามารถสร้างไฟล์รูปสรุปได้ กรุณารีเฟรชตัวอย่างแล้วลองใหม่อีกครั้ง");
+  } finally {
+    els.downloadExportPreview.disabled = false;
+    els.downloadExportPreview.textContent = originalText || `ดาวน์โหลด ${format.toUpperCase()}`;
+  }
+}
+
+function setExportPreviewOpen(isOpen) {
+  exportPreviewOpen = isOpen;
+  if (!els.exportImagePreviewPanel || !els.exportImagePreviewToggle) return;
+  els.exportImagePreviewPanel.hidden = !isOpen;
+  els.exportImagePreviewToggle.classList.toggle("is-active", isOpen);
+  els.exportImagePreviewToggle.setAttribute("aria-expanded", String(isOpen));
+  document.body.classList.toggle("export-modal-open", isOpen);
+  if (isOpen) {
+    renderExportPreview();
+    if (els.downloadExportPreview) {
+      els.downloadExportPreview.disabled = false;
+      els.downloadExportPreview.removeAttribute("title");
+      els.downloadExportPreview.textContent = `ดาวน์โหลด ${selectedExportFormat.toUpperCase()}`;
+    }
+    window.setTimeout(() => {
+      if (els.closeExportPreview) els.closeExportPreview.focus({ preventScroll: true });
+    }, 0);
+  } else {
+    els.exportImagePreviewToggle.focus({ preventScroll: true });
+  }
+}
+
 function render() {
   refreshFilterOptions();
   const items = filterRecords();
@@ -2871,12 +4012,14 @@ function render() {
   updateStatusChartV2(items);
   updateDistrictSummary(items);
   updateTable(items);
+  renderExportPreview();
 }
 
 function updateStateFromControls(options = {}) {
   const { clearSearch = false } = options;
   state.region = els.region.value;
   state.province = els.province.value;
+  syncRegionFromSelectedProvince();
   state.district = els.district.value;
   state.type = els.type.value;
   if (clearSearch) {
@@ -2897,59 +4040,66 @@ function updateStateFromControls(options = {}) {
 [els.rankView, els.rankMetric].filter(Boolean).forEach((el) => {
   el.addEventListener("change", () => updateStateFromControls());
 });
+async function loadSelectedYear(selectedYear) {
+  if (!els.year) return;
+  selectedYear = Number(selectedYear || els.year.value);
+  if (!Number.isFinite(selectedYear)) return;
+  els.year.value = String(selectedYear);
+  Object.assign(state, { year: selectedYear, region: "", province: "", district: "", type: "", search: "", rankView: "best", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
+  if (els.search) els.search.value = "";
+  hideOrgSearchSuggestions();
+  if (els.rankView) els.rankView.value = "best";
+  els.rankMetric.value = "overall";
+  els.pageSize.value = "10";
+  if (recordsByYear.has(selectedYear)) {
+    records = recordsByYear.get(selectedYear);
+    state.year = selectedYear;
+    dataSourceMode = staticCachedYears.has(selectedYear) ? "static" : (liveCachedYears.has(selectedYear) ? "live" : "cache");
+    dataSourceLabel = staticCachedYears.has(selectedYear)
+      ? `โหลดข้อมูลจากไฟล์บน GitHub Pages · ปี ${state.year}`
+      : (liveCachedYears.has(selectedYear)
+        ? `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`
+        : `ข้อมูลที่เคยโหลดไว้ในเครื่อง · ปี ${state.year}`);
+    renderWithTrendPreload();
+    if (!staticCachedYears.has(selectedYear)) {
+      syncStaticMetaAfterCache(selectedYear, {
+        year: selectedYear,
+        availableYears,
+        dataRevision,
+        generatedAt,
+        records: recordsByYear.get(selectedYear),
+      });
+    }
+    return;
+  }
+  const cachedPayload = await readBrowserCache(selectedYear);
+  if (cachedPayload) {
+    applyCachedPayload(cachedPayload, selectedYear);
+    renderWithTrendPreload();
+    syncStaticMetaAfterCache(selectedYear, cachedPayload);
+    return;
+  }
+  setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
+  let keepLoadingOverlay = false;
+  try {
+    dataSourceMode = "loading";
+    dataSourceLabel = `กำลังโหลดไฟล์ข้อมูลบน GitHub Pages · ปี ${selectedYear}`;
+    const staticLoaded = await loadStaticRecords(selectedYear, { timeoutMs: 20000 });
+    const liveLoaded = staticLoaded ? true : await loadLiveRecords(selectedYear);
+    if (liveLoaded || fallbackRecords.length) {
+      renderWithTrendPreload();
+    } else {
+      showLoadError(selectedYear);
+      keepLoadingOverlay = true;
+    }
+  } finally {
+    if (!keepLoadingOverlay) setLoading(false);
+  }
+}
+
 if (els.year) {
-  els.year.addEventListener("change", async () => {
-    const selectedYear = Number(els.year.value);
-    Object.assign(state, { year: selectedYear, region: "", province: "", district: "", type: "", search: "", rankView: "best", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
-    els.search.value = "";
-    hideOrgSearchSuggestions();
-    if (els.rankView) els.rankView.value = "best";
-    els.rankMetric.value = "overall";
-    els.pageSize.value = "10";
-    if (recordsByYear.has(selectedYear)) {
-      records = recordsByYear.get(selectedYear);
-      state.year = selectedYear;
-      dataSourceMode = staticCachedYears.has(selectedYear) ? "static" : (liveCachedYears.has(selectedYear) ? "live" : "cache");
-      dataSourceLabel = staticCachedYears.has(selectedYear)
-        ? `โหลดข้อมูลจากไฟล์บน GitHub Pages · ปี ${state.year}`
-        : (liveCachedYears.has(selectedYear)
-          ? `เชื่อมข้อมูลสดจาก Google Sheets · ปี ${state.year}`
-          : `ข้อมูลที่เคยโหลดไว้ในเครื่อง · ปี ${state.year}`);
-      renderWithTrendPreload();
-      if (!staticCachedYears.has(selectedYear)) {
-        syncStaticMetaAfterCache(selectedYear, {
-          year: selectedYear,
-          availableYears,
-          dataRevision,
-          generatedAt,
-          records: recordsByYear.get(selectedYear),
-        });
-      }
-      return;
-    }
-    const cachedPayload = await readBrowserCache(selectedYear);
-    if (cachedPayload) {
-      applyCachedPayload(cachedPayload, selectedYear);
-      renderWithTrendPreload();
-      syncStaticMetaAfterCache(selectedYear, cachedPayload);
-      return;
-    }
-    setLoading(true, `กำลังโหลดข้อมูลปี ${selectedYear}`);
-    let keepLoadingOverlay = false;
-    try {
-      dataSourceMode = "loading";
-      dataSourceLabel = `กำลังโหลดไฟล์ข้อมูลบน GitHub Pages · ปี ${selectedYear}`;
-      const staticLoaded = await loadStaticRecords(selectedYear, { timeoutMs: 20000 });
-      const liveLoaded = staticLoaded ? true : await loadLiveRecords(selectedYear);
-      if (liveLoaded || fallbackRecords.length) {
-        renderWithTrendPreload();
-      } else {
-        showLoadError(selectedYear);
-        keepLoadingOverlay = true;
-      }
-    } finally {
-      if (!keepLoadingOverlay) setLoading(false);
-    }
+  els.year.addEventListener("change", () => {
+    loadSelectedYear(Number(els.year.value));
   });
 }
 if (els.search) {
@@ -3030,6 +4180,13 @@ els.nextPage.addEventListener("click", () => {
   render();
 });
 els.reset.addEventListener("click", () => {
+  const defaultYear = Number((window.LPA_CONFIG || {}).defaultYear || Math.max(...availableYears) || state.year);
+  const currentControlYear = Number(els.year ? els.year.value : state.year);
+  if (currentControlYear !== defaultYear && els.year) {
+    loadSelectedYear(defaultYear);
+    if (window.matchMedia("(max-width: 760px)").matches) setMobileFilterOpen(false);
+    return;
+  }
   Object.assign(state, { region: "", province: "", district: "", type: "", search: "", rankView: "best", rankMetric: "overall", rankPage: 1, quick: "all", page: 1, pageSize: 10 });
   els.search.value = "";
   hideOrgSearchSuggestions();
@@ -3042,6 +4199,47 @@ els.reset.addEventListener("click", () => {
 
 if (els.exportExcel) {
   els.exportExcel.addEventListener("click", handleExportExcel);
+}
+
+if (els.exportImagePreviewToggle && els.exportImagePreviewPanel) {
+  els.exportImagePreviewToggle.addEventListener("click", () => {
+    setExportPreviewOpen(!exportPreviewOpen);
+  });
+}
+
+if (els.refreshExportPreview) {
+  els.refreshExportPreview.addEventListener("click", renderExportPreview);
+}
+
+if (els.closeExportPreview) {
+  els.closeExportPreview.addEventListener("click", () => setExportPreviewOpen(false));
+}
+
+if (els.exportImagePreviewPanel) {
+  els.exportImagePreviewPanel.addEventListener("click", (event) => {
+    if (event.target.closest("[data-export-close]")) setExportPreviewOpen(false);
+  });
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && exportPreviewOpen) setExportPreviewOpen(false);
+});
+
+exportFormatButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    selectedExportFormat = button.dataset.exportFormat || "png";
+    exportFormatButtons.forEach((item) => item.classList.toggle("is-active", item === button));
+    if (els.downloadExportPreview) {
+      els.downloadExportPreview.textContent = `ดาวน์โหลด ${selectedExportFormat.toUpperCase()}`;
+    }
+  });
+});
+
+if (els.downloadExportPreview) {
+  els.downloadExportPreview.disabled = false;
+  els.downloadExportPreview.removeAttribute("title");
+  els.downloadExportPreview.textContent = `ดาวน์โหลด ${selectedExportFormat.toUpperCase()}`;
+  els.downloadExportPreview.addEventListener("click", handleExportImageDownload);
 }
 
 if (els.retryLoad) {

@@ -3267,12 +3267,17 @@ function drawCanvasText(ctx, text, x, y, options = {}) {
     maxLines = 1,
     align = "left",
     baseline = "top",
+    rotate = 0,
   } = options;
   ctx.save();
   ctx.font = exportCanvasFont(size, weight);
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.textBaseline = baseline;
+  if (rotate) {
+    ctx.translate(x, y);
+    ctx.rotate((rotate * Math.PI) / 180);
+  }
   const lines = Number.isFinite(maxWidth) ? wrapCanvasText(ctx, text, maxWidth) : [String(text ?? "")];
   const clipped = lines.slice(0, maxLines);
   clipped.forEach((line, index) => {
@@ -3283,7 +3288,7 @@ function drawCanvasText(ctx, text, x, y, options = {}) {
       }
       output = `${output}...`;
     }
-    ctx.fillText(output, x, y + index * lineHeight);
+    ctx.fillText(output, rotate ? 0 : x, (rotate ? 0 : y) + index * lineHeight);
   });
   ctx.restore();
   return clipped.length * lineHeight;
@@ -3500,7 +3505,7 @@ function drawExportLineChart(ctx, items, x, y, width, height) {
   ctx.lineTo(plotX, plotY + plotH);
   ctx.lineTo(plotX + plotW, plotY + plotH);
   ctx.stroke();
-  drawCanvasText(ctx, "ร้อยละ", plotX - 46, plotY + plotH / 2, { size: 17, weight: 800, color: exportCanvasColor("muted"), align: "center" });
+  drawCanvasText(ctx, "ร้อยละ", plotX - 46, plotY + plotH / 2, { size: 17, weight: 800, color: exportCanvasColor("muted"), align: "center", baseline: "middle", rotate: -90 });
 
   const pilotIndex = summaries.findIndex((row) => Number(row.year) === 2567);
   if (pilotIndex >= 0) {
@@ -3603,7 +3608,7 @@ function drawExportBarChart(ctx, items, chartRegion, x, y, width, height) {
   ctx.lineTo(plotX, plotY + plotH);
   ctx.lineTo(plotX + plotW, plotY + plotH);
   ctx.stroke();
-  drawCanvasText(ctx, "ร้อยละ", plotX - 46, plotY + plotH / 2, { size: 17, weight: 800, color: exportCanvasColor("muted"), align: "center" });
+  drawCanvasText(ctx, "ร้อยละ", plotX - 46, plotY + plotH / 2, { size: 17, weight: 800, color: exportCanvasColor("muted"), align: "center", baseline: "middle", rotate: -90 });
 
   grouped.forEach(([label, rows], index) => {
     const xCenter = plotX + index * groupW + groupW / 2;

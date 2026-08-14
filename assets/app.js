@@ -187,7 +187,7 @@ function updateDataStatusIndicator() {
     els.versionStatusDot.className = `version-status-dot ${meta.className}`;
   }
   if (els.versionBadge) {
-    const label = `V4.3.1 draft · ${meta.text}`;
+    const label = `V4.3 · ${meta.text}`;
     els.versionBadge.setAttribute("title", meta.text);
     els.versionBadge.setAttribute("aria-label", label);
   }
@@ -1628,7 +1628,7 @@ function updateTrendChart(items) {
       ${points44.map((point, index) => `<circle class="trend-dot-44" cx="${point.x}" cy="${point.y}" r="6"></circle>${valueLabel(point, "lpa", index)}`).join("")}
       ${points45.map((point, index) => `<circle class="trend-dot-45" cx="${point.x}" cy="${point.y}" r="6"></circle>${valueLabel(point, "school", index)}`).join("")}
       ${years.map((year, index) => `<text class="trend-label" x="${x(index)}" y="${height - 12}" text-anchor="middle">${year}</text>`).join("")}
-      <text class="trend-label" x="${margin.left + 6}" y="28">ร้อยละ</text>
+      <text class="trend-label trend-y-title" x="24" y="${margin.top + plotH / 2}" text-anchor="middle" transform="rotate(-90 24 ${margin.top + plotH / 2})">ร้อยละ</text>
       <text class="trend-label" x="${width - margin.right}" y="28" text-anchor="end">สถานศึกษาแสดงเฉพาะปีที่เทียบได้</text>
     </svg>
   `;
@@ -1947,7 +1947,7 @@ function updateTrendChartV2(items) {
       ${allPoints.map((item) => item.points.length > 1 ? `<path class="trend-line-${item.key}" d="${path(item.points)}"></path>` : "").join("")}
       ${allPoints.map((item) => item.points.map((point, index) => `<circle class="trend-dot-${item.key}" cx="${point.x}" cy="${point.y}" r="6"></circle>${valueLabel(point, item, index)}`).join("")).join("")}
       ${years.map((year, index) => `<text class="trend-label" x="${x(index)}" y="${height - 12}" text-anchor="middle">${year}</text>`).join("")}
-      <text class="trend-label" x="${margin.left + 6}" y="30">ร้อยละ</text>
+      <text class="trend-label trend-y-title" x="24" y="${margin.top + plotH / 2}" text-anchor="middle" transform="rotate(-90 24 ${margin.top + plotH / 2})">ร้อยละ</text>
       <text class="trend-label" x="${width - margin.right}" y="30" text-anchor="end">${state.quick === "all" ? "ร้อยละผ่านรายปี" : "ร้อยละที่ต้องติดตามรายปี"}</text>
     </svg>
     ${trendStatus}
@@ -2775,7 +2775,7 @@ function buildExportSheets(items, detailedItems = [], options = {}) {
     ["คำว่า ยังไม่พบการดำเนินงาน ในรายการย่อย", "หมายถึงฐานข้อมูลรายข้อระบุว่ายังไม่พบการดำเนินงานในข้อนั้น จึงเป็นข้อที่สามารถใช้วางแผนพัฒนาคะแนนได้"],
     ["รายการที่ควรพัฒนา", "สรุปจากรายการย่อยที่ยังไม่พบการดำเนินงาน เพื่อให้ผู้ใช้เห็นทันทีว่าควรกลับไปดูหรือพัฒนาข้อใด"],
     ["ช่องว่างหรือเครื่องหมาย - ในรายการย่อย", "หมายถึงฐานกลางของปีนั้นยังไม่มีข้อมูลรายข้อในระดับที่ใช้ Export ได้ ไม่ได้แปลว่าไม่ดำเนินการเสมอไป"],
-    ["หมายเหตุ", "ไฟล์นี้เป็น V4.3.1 ส่งออกจากข้อมูลตามตัวกรองที่ผู้ใช้เลือกใน Dashboard"],
+    ["หมายเหตุ", "ไฟล์นี้เป็น V4.3 ส่งออกจากข้อมูลตามตัวกรองที่ผู้ใช้เลือกใน Dashboard"],
   ];
   return [
     {

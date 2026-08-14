@@ -3,6 +3,6 @@ window.LPA_CONFIG = {
   // Example: https://script.google.com/macros/s/AKfycb.../exec
   appsScriptUrl: "https://script.google.com/macros/s/AKfycbyyj2xouIj_YIFGX7iML035RwLgI8kUuEID4zNgk47D9fZt7CbhJ9ryngLvxmMdTQvmxA/exec",
   staticDataBase: "data",
-  staticDataVersion: "20260805-v4.3.1-draft",
+  staticDataVersion: "20260805-v4.3",
   defaultYear: 2568,
 };

@@ -3381,7 +3381,7 @@ function drawExportHeader(ctx, x, y, width) {
   );
   drawCanvasFitText(
     ctx,
-    "จากข้อมูลผลการประเมินประสิทธิภาพองค์กรปกครองส่วนท้องถิ่น (LPA)",
+    "วิเคราะห์จากฐานข้อมูลผลการประเมินประสิทธิภาพองค์กรปกครองส่วนท้องถิ่น (Local Performance Assessment : LPA)",
     x,
     y + 58,
     width - conditionW - 52,
